@@ -17,6 +17,8 @@
  */
 
 import { log } from '../utils/logger.js';
+import { fetchBureau } from '../bureau/bureauClient.js';
+import { runPolicy } from '../policy/PolicyEngine.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -65,6 +67,14 @@ function createInitialState() {
       creditScore: null,
       activeLoans: null,
       dpdHistory: null,
+      writtenOffAccounts: null,
+      creditUtilization: null,
+      rawResponse: null,
+    },
+    policy: {
+      decision: null,     // null | 'PASS' | 'FAIL' | 'REFER'
+      rules: [],          // Machine-readable audit trail
+      timestamp: null,
     },
     offer: {
       amount: 250000,
@@ -300,24 +310,140 @@ function _triggerFaceScan() {
   }, 3000);
 }
 
-/** Internal: runs mock credit bureau check */
-function _triggerBureau() {
+/** Internal: calls live bureau API → runs policy engine → decides offer */
+async function _triggerBureau() {
   state = { ...state, phase: PHASES.BUREAU, leftOverlay: null };
   log('ORCHESTRATOR', 'INFO', '→ BUREAU');
   notify();
 
-  // ── HARDCODED MOCK: Simulate credit bureau API (2s delay) ──
-  setTimeout(() => {
-    const mockBureau = {
-      status: 'pass',
-      creditScore: 742,
-      activeLoans: 1,
-      dpdHistory: '0 DPD in last 12 months',
+  try {
+    // ── Step 1: Fetch credit data from live bureau API ──
+    const bureauResponse = await fetchBureau({
+      name: state.aadhaar.name || 'Unknown',
+      aadhaarRef: state.aadhaar.aadhaarNumber || 'N/A',
+    });
+    log('ORCHESTRATOR', 'INFO', 'Bureau API response', bureauResponse);
+
+    // Format DPD for display
+    const maxDPD = bureauResponse.dpdHistory?.length
+      ? Math.max(...bureauResponse.dpdHistory.map(d => d.days))
+      : 0;
+    const dpdSummary = maxDPD === 0
+      ? '0 DPD in last 12 months'
+      : `Max ${maxDPD} DPD in last 12 months`;
+
+    // ── Step 2: Get income and compute proposed EMI ──
+    let income = 0;
+    try {
+      const { getState } = await import('../state/stateManager.js');
+      const aiState = getState();
+      income = aiState.extractedData?.income?.value || 0;
+    } catch { /* fallback to 0 */ }
+
+    const proposedEMI = _calcEMI(state.offer.amount, state.offer.interestRate, state.offer.tenure);
+
+    // ── Step 3: Run policy engine ──
+    const policyResult = runPolicy({
+      bureau: bureauResponse,
+      income,
+      emi: proposedEMI,
+      user: {
+        pan: null,    // Not collected in current flow
+        phone: null,
+        aadhaarRef: state.aadhaar.aadhaarNumber || null,
+      },
+    });
+    log('ORCHESTRATOR', 'INFO', `Policy decision: ${policyResult.decision}`, policyResult.rules);
+
+    // ── Step 4: Build bureau state ──
+    const bureauState = {
+      status: policyResult.decision.toLowerCase(), // 'pass' | 'fail' | 'refer'
+      creditScore: bureauResponse.creditScore,
+      activeLoans: bureauResponse.activeLoans,
+      dpdHistory: dpdSummary,
+      writtenOffAccounts: bureauResponse.writtenOffAccounts,
+      creditUtilization: bureauResponse.creditUtilization,
+      rawResponse: bureauResponse,
     };
-    state = { ...state, bureau: mockBureau, phase: PHASES.OFFER };
-    log('ORCHESTRATOR', 'INFO', '→ OFFER (bureau passed)', mockBureau);
+
+    // ── Step 5: Compute dynamic offer based on bureau/policy ──
+    const offer = _computeOffer(bureauResponse, income, policyResult.decision);
+
+    // ── Step 6: Update state ──
+    if (policyResult.decision === 'PASS') {
+      state = { ...state, bureau: bureauState, policy: policyResult, offer, phase: PHASES.OFFER };
+      log('ORCHESTRATOR', 'INFO', '→ OFFER (policy PASS)', { offer, policy: policyResult });
+    } else if (policyResult.decision === 'REFER') {
+      state = { ...state, bureau: bureauState, policy: policyResult, offer, phase: PHASES.OFFER };
+      log('ORCHESTRATOR', 'WARN', '→ OFFER (policy REFER — manual review flagged)', policyResult);
+    } else {
+      // FAIL — still show bureau results but block offer
+      state = { ...state, bureau: bureauState, policy: policyResult, phase: PHASES.BUREAU };
+      log('ORCHESTRATOR', 'WARN', '→ BUREAU FAIL — application rejected', policyResult);
+      _speakError('Unfortunately, based on our credit assessment, we are unable to extend a loan offer at this time. Thank you for your time.');
+    }
     notify();
-  }, 2000);
+
+  } catch (err) {
+    log('ORCHESTRATOR', 'ERROR', 'Bureau/Policy error', err.message);
+    // Fallback: still move to offer with defaults
+    const fallbackBureau = {
+      status: 'refer',
+      creditScore: 0,
+      activeLoans: 0,
+      dpdHistory: 'Bureau unavailable',
+      writtenOffAccounts: 0,
+      creditUtilization: 0,
+      rawResponse: null,
+    };
+    state = { ...state, bureau: fallbackBureau, phase: PHASES.OFFER };
+    log('ORCHESTRATOR', 'WARN', '→ OFFER (bureau fallback)');
+    notify();
+  }
+}
+
+/** Compute personalised offer from bureau data + income */
+function _computeOffer(bureau, income, decision) {
+  const score = bureau.creditScore || 650;
+
+  // Interest rate: better score = lower rate
+  let interestRate;
+  if (score >= 800) interestRate = 8.5;
+  else if (score >= 750) interestRate = 9.5;
+  else if (score >= 700) interestRate = 10.5;
+  else if (score >= 650) interestRate = 12.0;
+  else interestRate = 14.0;
+
+  // Max eligible amount: based on income and score
+  let maxAmount;
+  if (income > 0) {
+    const multiplier = score >= 750 ? 20 : score >= 700 ? 15 : score >= 650 ? 10 : 5;
+    maxAmount = Math.min(income * multiplier, 1000000);
+    maxAmount = Math.round(maxAmount / 10000) * 10000; // round to nearest 10K
+  } else {
+    maxAmount = 250000; // default if income unknown
+  }
+
+  // If decision is REFER, cap at 60% of max
+  if (decision === 'REFER') {
+    maxAmount = Math.round(maxAmount * 0.6 / 10000) * 10000;
+  }
+
+  const tenure = score >= 750 ? 48 : score >= 700 ? 36 : 24;
+
+  return {
+    amount: maxAmount,
+    tenure,
+    interestRate,
+    negotiationRounds: 0,
+  };
+}
+
+/** EMI calculator (used for policy checks) */
+function _calcEMI(principal, annualRate, months) {
+  const r = annualRate / 12 / 100;
+  if (r === 0) return Math.round(principal / months);
+  return Math.round(principal * r * Math.pow(1 + r, months) / (Math.pow(1 + r, months) - 1));
 }
 
 /** Called when user verbally consents */

@@ -639,17 +639,72 @@ function PanelFaceScan({ faceAge, phase }) {
 }
 
 /* ─── Phase: BUREAU ───────────────────────────────────── */
-function PanelBureau() {
-  const checks = ['Connecting to CIBIL bureau', 'Pulling credit report', 'Evaluating DPD history', 'Checking active loans', 'Calculating eligibility'];
+function PanelBureau({ bureau, policy }) {
+  const checks = ['Connecting to CIBIL bureau', 'Pulling credit report', 'Evaluating DPD history', 'Checking written-off accounts', 'Running policy engine'];
   const [step, setStep] = useState(0);
+  const isFailed = bureau?.status === 'fail' && policy?.decision;
 
   useEffect(() => {
-    if (step < checks.length - 1) {
+    if (!isFailed && step < checks.length - 1) {
       const t = setTimeout(() => setStep(s => s + 1), 400);
       return () => clearTimeout(t);
     }
-  }, [step, checks.length]);
+  }, [step, checks.length, isFailed]);
 
+  // If bureau has returned a FAIL, show the rejection + audit trail
+  if (isFailed) {
+    return (
+      <div className="p-5 flex flex-col gap-4" style={{ paddingTop: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: `2px solid ${C.red}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={30} style={{ color: C.red }} />
+          </div>
+          <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 16, fontWeight: 700, color: C.red }}>Application Declined</h3>
+          <p style={{ fontSize: 12, color: C.textSub, textAlign: 'center', lineHeight: 1.6 }}>
+            Based on our credit assessment, we are unable to proceed.
+          </p>
+        </div>
+
+        {/* Bureau Summary */}
+        <div style={{ padding: '14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 10 }}>BUREAU REPORT</div>
+          {[
+            { label: 'Credit Score', value: bureau.creditScore, color: bureau.creditScore >= 650 ? C.green : C.red },
+            { label: 'Active Loans', value: bureau.activeLoans },
+            { label: 'DPD History', value: bureau.dpdHistory },
+            { label: 'Written-Off', value: bureau.writtenOffAccounts, color: bureau.writtenOffAccounts > 0 ? C.red : C.green },
+          ].map((row, i) => (
+            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < 3 ? `1px solid ${C.border}` : 'none' }}>
+              <span style={{ fontSize: 11, color: C.textSub }}>{row.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: row.color || C.text }}>{row.value}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Policy Audit Trail */}
+        {policy?.rules && (
+          <div style={{ padding: '14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 10 }}>POLICY AUDIT TRAIL</div>
+            {policy.rules.map((r, i) => (
+              <motion.div key={r.rule} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: i < policy.rules.length - 1 ? `1px solid rgba(255,255,255,0.04)` : 'none' }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, background: r.result === 'pass' ? 'rgba(16,185,129,0.15)' : r.result === 'fail' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', border: `1px solid ${r.result === 'pass' ? C.green : r.result === 'fail' ? C.red : C.yellow}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {r.result === 'pass' ? <CheckCircle2 size={9} style={{ color: C.green }} /> : r.result === 'fail' ? <AlertTriangle size={9} style={{ color: C.red }} /> : <Activity size={9} style={{ color: C.yellow }} />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.text, marginBottom: 2 }}>{r.rule.replace(/_/g, ' ').toUpperCase()}</div>
+                  <div style={{ fontSize: 10, color: C.textSub, lineHeight: 1.5 }}>{r.explanation}</div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: r.result === 'pass' ? C.green : r.result === 'fail' ? C.red : C.yellow, flexShrink: 0, textTransform: 'uppercase' }}>{r.result}</span>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Loading animation
   return (
     <div className="p-5 flex flex-col gap-5 items-center" style={{ paddingTop: 40 }}>
       <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
@@ -680,22 +735,44 @@ function PanelBureau() {
 }
 
 /* ─── Phase: OFFER ────────────────────────────────────── */
-function PanelOffer({ offer, bureau, onUpdateOffer }) {
+function PanelOffer({ offer, bureau, policy, onUpdateOffer }) {
   const [amount, setAmount] = useState(offer.amount);
   const [tenure, setTenure] = useState(offer.tenure);
+  const [showAudit, setShowAudit] = useState(false);
   const emi = calcEMI(amount, offer.interestRate, tenure);
   const loanFill = ((amount - 100000) / (500000 - 100000)) * 100;
   const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
+  const isRefer = policy?.decision === 'REFER';
 
   return (
     <div className="p-5 flex flex-col gap-4">
-      {/* Bureau result */}
+      {/* Bureau + Policy decision */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
-        <ShieldCheck size={16} style={{ color: C.green }} />
-        <div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>Credit Score: {bureau.creditScore} — Eligible ✓</span>
-          <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory}</p>
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderRadius: 10, background: isRefer ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.08)', border: `1px solid ${isRefer ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.2)'}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ShieldCheck size={16} style={{ color: isRefer ? C.yellow : C.green }} />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: isRefer ? C.yellow : C.green }}>
+              Credit Score: {bureau.creditScore} — {isRefer ? 'Manual Review ⚠' : 'Eligible ✓'}
+            </span>
+            <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory}</p>
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: isRefer ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: isRefer ? C.yellow : C.green, letterSpacing: '0.08em' }}>
+            {policy?.decision || 'PASS'}
+          </span>
+        </div>
+        {/* Quick bureau stats */}
+        <div style={{ display: 'flex', gap: 12, paddingTop: 6, borderTop: `1px solid rgba(255,255,255,0.04)` }}>
+          {[
+            { label: 'Active Loans', value: bureau.activeLoans ?? 0 },
+            { label: 'Written-Off', value: bureau.writtenOffAccounts ?? 0, bad: (bureau.writtenOffAccounts ?? 0) > 0 },
+            { label: 'Utilization', value: `${bureau.creditUtilization ?? 0}%` },
+          ].map(s => (
+            <div key={s.label} style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.05em', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: s.bad ? C.red : C.text }}>{s.value}</div>
+            </div>
+          ))}
         </div>
       </motion.div>
 
@@ -758,6 +835,31 @@ function PanelOffer({ offer, bureau, onUpdateOffer }) {
           />
         </div>
       </motion.div>
+
+      {/* Policy Audit Toggle */}
+      {policy?.rules && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
+          <button onClick={() => setShowAudit(!showAudit)}
+            style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}`, color: C.textSub, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>📋 Policy Audit Trail ({policy.rules.filter(r => r.result === 'pass').length}/{policy.rules.length} passed)</span>
+            <span style={{ fontSize: 10 }}>{showAudit ? '▲' : '▼'}</span>
+          </button>
+          {showAudit && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+              style={{ marginTop: 6, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+              {policy.rules.map((r, i) => (
+                <div key={r.rule} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < policy.rules.length - 1 ? `1px solid rgba(255,255,255,0.04)` : 'none' }}>
+                  <span style={{ fontSize: 12 }}>{r.result === 'pass' ? '✅' : r.result === 'fail' ? '❌' : '⚠️'}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: C.text }}>{r.rule.replace(/_/g, ' ')}</span>
+                    <p style={{ fontSize: 9, color: C.textMuted, marginTop: 1 }}>{r.explanation}</p>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </motion.div>
+      )}
 
       <motion.button
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
@@ -871,7 +973,7 @@ function PanelComplete({ offer, token }) {
    RIGHT PANEL (ORCHESTRATED)
 ══════════════════════════════════════════════════════════ */
 function RightPanel({ orchState, kycFields, token }) {
-  const { phase, aadhaar, kycMismatch, faceAge, bureau, offer, consent } = orchState;
+  const { phase, aadhaar, kycMismatch, faceAge, bureau, policy, offer, consent } = orchState;
   const currentStep = phaseToStep(phase);
 
   function renderContent() {
@@ -889,9 +991,9 @@ function RightPanel({ orchState, kycFields, token }) {
       case PHASES.FACE_DONE:
         return <PanelFaceScan faceAge={faceAge} phase={phase} />;
       case PHASES.BUREAU:
-        return <PanelBureau />;
+        return <PanelBureau bureau={bureau} policy={policy} />;
       case PHASES.OFFER:
-        return <PanelOffer offer={offer} bureau={bureau} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
+        return <PanelOffer offer={offer} bureau={bureau} policy={policy} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
       case PHASES.CONSENT:
         return <PanelConsent consent={consent} token={token} />;
       case PHASES.COMPLETE:
