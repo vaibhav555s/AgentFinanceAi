@@ -16,17 +16,10 @@
  *   COMPLETE       → Session done
  */
 
-import { fetchBureau } from '../bureau/bureauClient.js';
-import { runPolicy } from '../policy/PolicyEngine.js';
-import { 
-  calculatePolicyOffer, 
-  buildOpeningOfferScript,
-  processNegotiation,
-  calcEMI
-} from '../negotiation/negotiationAgent.js';
+import { log } from '../utils/logger.js';
+import { calculatePolicyOffer, buildOpeningOfferScript } from '../negotiation/negotiationAgent.js';
 import { synthesizeAndPlay } from '../tts/sarvamTTS.js';
 import { addTranscript } from '../transcript/transcriptManager.js';
-import { log } from '../utils/logger.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -75,14 +68,6 @@ function createInitialState() {
       creditScore: null,
       activeLoans: null,
       dpdHistory: null,
-      writtenOffAccounts: null,
-      creditUtilization: null,
-      rawResponse: null,
-    },
-    policy: {
-      decision: null,     // null | 'PASS' | 'FAIL' | 'REFER'
-      rules: [],          // Machine-readable audit trail
-      timestamp: null,
     },
     offer: {
       amount: 250000,
@@ -325,128 +310,62 @@ function _triggerFaceScan() {
   }, 3000);
 }
 
-/** Internal: calls live bureau API → runs policy engine → decides offer */
-async function _triggerBureau() {
+/** Internal: runs mock credit bureau check */
+function _triggerBureau() {
   state = { ...state, phase: PHASES.BUREAU, leftOverlay: null };
   log('ORCHESTRATOR', 'INFO', '→ BUREAU');
   notify();
 
-  try {
-    // ── Step 1: Fetch credit data from live bureau API ──
-    const bureauResponse = await fetchBureau({
-      name: state.aadhaar.name || 'Unknown',
-      aadhaarRef: state.aadhaar.aadhaarNumber || 'N/A',
-    });
-    log('ORCHESTRATOR', 'INFO', 'Bureau API response', bureauResponse);
+  setTimeout(() => {
+    const mockBureau = {
+      status: 'pass',
+      creditScore: 742,
+      activeLoans: 1,
+      dpdHistory: '0 DPD in last 12 months',
+    };
 
-    // Format DPD for display
-    const maxDPD = bureauResponse.dpdHistory?.length
-      ? Math.max(...bureauResponse.dpdHistory.map(d => d.days))
-      : 0;
-    const dpdSummary = maxDPD === 0
-      ? '0 DPD in last 12 months'
-      : `Max ${maxDPD} DPD in last 12 months`;
-
-    // ── Step 2: Get income and compute proposed EMI ──
-    let income = 85000;
-    try {
-      const { getState } = await import('../state/stateManager.js');
-      const aiState = getState();
-      income = aiState.extractedData?.income?.value || 85000;
-    } catch { /* fallback to 85K */ }
-
-    const proposedEMI = calcEMI(state.offer.amount, state.offer.interestRate, state.offer.tenure);
-
-    // ── Step 3: Run policy engine ──
-    const policyResult = runPolicy({
-      bureau: bureauResponse,
+    // ── Policy Engine: compute personalised offer based on bureau data ──
+    // We'll use the income from state if available, else default to 85000
+    const income = 85000; // TODO: pull from stateManager.extractedData.income.value
+    const policyLimits = calculatePolicyOffer({
       income,
-      emi: proposedEMI,
-      user: {
-        pan: null,
-        phone: null,
-        aadhaarRef: state.aadhaar.aadhaarNumber || null,
-      },
+      creditScore: mockBureau.creditScore,
+      fraudScore: 0,
     });
-    log('ORCHESTRATOR', 'INFO', `Policy decision: ${policyResult.decision}`, policyResult.rules);
 
-    // ── Step 4: Build bureau state ──
-    const bureauState = {
-      status: policyResult.decision.toLowerCase(), // 'pass' | 'fail' | 'refer'
-      creditScore: bureauResponse.creditScore,
-      activeLoans: bureauResponse.activeLoans,
-      dpdHistory: dpdSummary,
-      writtenOffAccounts: bureauResponse.writtenOffAccounts,
-      creditUtilization: bureauResponse.creditUtilization,
-      rawResponse: bureauResponse,
+    const initialOffer = {
+      amount: policyLimits.initialAmount,
+      tenure: 36,
+      interestRate: policyLimits.interestRate,
     };
 
-    // ── Step 5: If PASS/REFER, calculate negotiation limits & trigger verbal offer ──
-    if (policyResult.decision === 'PASS' || policyResult.decision === 'REFER') {
-      const policyLimits = calculatePolicyOffer({
-        income,
-        creditScore: bureauResponse.creditScore,
-        fraudScore: 0,
-      });
+    state = {
+      ...state,
+      bureau: mockBureau,
+      offer: initialOffer,
+      phase: PHASES.OFFER,
+      negotiation: {
+        ...state.negotiation,
+        policyLimits,
+        openingSpoken: false,
+      },
+    };
+    log('ORCHESTRATOR', 'INFO', '→ OFFER (policy engine)', { policyLimits, initialOffer });
+    notify();
 
-      const initialOffer = {
-        amount: policyLimits.maxAmount,
-        tenure: 36,
-        interestRate: policyLimits.interestRate,
-      };
-
-      state = {
-        ...state,
-        bureau: bureauState,
-        policy: policyResult,
-        offer: initialOffer,
-        phase: PHASES.OFFER,
-        negotiation: {
-          ...state.negotiation,
-          policyLimits,
-          openingSpoken: false,
-        },
-      };
-      log('ORCHESTRATOR', 'INFO', '→ OFFER (policy + negotiation initialized)', { policyLimits, initialOffer });
+    // Speak the opening offer after 800ms (let UI paint first)
+    setTimeout(async () => {
+      const script = buildOpeningOfferScript(initialOffer, policyLimits);
+      addTranscript('agent', script, 1.0);
+      window.dispatchEvent(new Event('ai_speaking_start'));
+      try {
+        await synthesizeAndPlay(script);
+      } catch (_) { /* ignore TTS errors */ }
+      window.dispatchEvent(new Event('ai_speaking_end'));
+      state = { ...state, negotiation: { ...state.negotiation, openingSpoken: true } };
       notify();
-
-      // Speak the opening offer after 800ms
-      setTimeout(async () => {
-        const script = buildOpeningOfferScript(initialOffer, policyLimits);
-        addTranscript('agent', script, 1.0);
-        window.dispatchEvent(new Event('ai_speaking_start'));
-        try {
-          await synthesizeAndPlay(script);
-        } catch (_) { /* ignore TTS errors */ }
-        window.dispatchEvent(new Event('ai_speaking_end'));
-        state = { ...state, negotiation: { ...state.negotiation, openingSpoken: true } };
-        notify();
-      }, 800);
-
-    } else {
-      // FAIL 
-      state = { ...state, bureau: bureauState, policy: policyResult, phase: PHASES.BUREAU };
-      log('ORCHESTRATOR', 'WARN', '→ BUREAU FAIL — application rejected', policyResult);
-      _speakError('Unfortunately, based on our credit assessment, we are unable to extend a loan offer at this time. Thank you for your time.');
-    }
-    notify();
-
-  } catch (err) {
-    log('ORCHESTRATOR', 'ERROR', 'Bureau/Policy error', err.message);
-    // Fallback: still move to offer with defaults
-    const fallbackBureau = {
-      status: 'refer',
-      creditScore: 0,
-      activeLoans: 0,
-      dpdHistory: 'Bureau unavailable',
-      writtenOffAccounts: 0,
-      creditUtilization: 0,
-      rawResponse: null,
-    };
-    state = { ...state, bureau: fallbackBureau, phase: PHASES.OFFER };
-    log('ORCHESTRATOR', 'WARN', '→ OFFER (bureau fallback)');
-    notify();
-  }
+    }, 800);
+  }, 2000);
 }
 
 /** Called when user verbally consents */
