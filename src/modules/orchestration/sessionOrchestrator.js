@@ -268,9 +268,9 @@ export function triggerConsent(phrase) {
 
 /**
  * Add a negotiation round entry to the log.
- * @param {{ type: 'AI'|'USER', message: string, amount?: number, tenure?: number }} entry
+ * @param {{ type: 'AI'|'USER', message: string, amount?: number, tenure?: number, rate?: number }} entry
  */
-export function addNegotiationRound({ type, message, amount, tenure }) {
+export function addNegotiationRound({ type, message, amount, tenure, rate }) {
   const roundNum = type === 'AI'
     ? state.negotiation.currentRound + 1
     : state.negotiation.currentRound;
@@ -281,6 +281,7 @@ export function addNegotiationRound({ type, message, amount, tenure }) {
     message,
     amount: amount || state.offer.amount,
     tenure: tenure || state.offer.tenure,
+    rate: rate || state.offer.interestRate,
     timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
   };
 
@@ -299,9 +300,9 @@ export function addNegotiationRound({ type, message, amount, tenure }) {
 
 /**
  * Apply a counter-offer from the negotiation agent.
- * Updates the offer amount/tenure on the state.
+ * Updates the offer amount/tenure/rate on the state.
  */
-export function applyCounterOffer(amount, tenure) {
+export function applyCounterOffer(amount, tenure, rate) {
   if (state.phase !== PHASES.OFFER) return;
   state = {
     ...state,
@@ -309,9 +310,10 @@ export function applyCounterOffer(amount, tenure) {
       ...state.offer,
       amount: amount || state.offer.amount,
       tenure: tenure || state.offer.tenure,
+      interestRate: rate || state.offer.interestRate,
     },
   };
-  log('NEGOTIATION', 'INFO', `Counter offer applied: ₹${amount} / ${tenure}mo`);
+  log('NEGOTIATION', 'INFO', `Counter offer applied: ₹${amount} / ${tenure}mo @ ${rate}%`);
   notify();
 }
 

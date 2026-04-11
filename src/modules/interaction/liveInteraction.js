@@ -213,6 +213,13 @@ export async function processAudio(audioBlob) {
     }
     // ─────────────────────────────────────────────────────────────
 
+    // Ignore normal speech processing in non-CHAT phases (like AADHAAR upload or COMPLETE)
+    // This prevents the AI from repeating "Please upload your Aadhaar card" while user is doing so.
+    if (getPhase() !== PHASES.CHAT) {
+      log('INTERACTION', 'INFO', `Ignoring speech input in phase ${getPhase()}`);
+      return { transcribedText: sttResult.text, confidence: sttResult.confidence, structuredOutput: getStructuredOutput() };
+    }
+
     // Standard KYC pipeline (CHAT phase)
     debouncedPipeline.cancel();
     await runAIPipeline();
@@ -261,7 +268,7 @@ async function _handleNegotiationTurn(userText) {
     return;
   }
 
-  const { message, action, newAmount, newTenure, round } = result;
+  const { message, action, newAmount, newTenure, newRate, round } = result;
 
   // Log the AI's negotiation response
   addNegotiationRound({
@@ -269,12 +276,14 @@ async function _handleNegotiationTurn(userText) {
     message,
     amount: newAmount || offer.amount,
     tenure: newTenure || offer.tenure,
+    rate: newRate || offer.interestRate,
   });
 
   if (action === 'COUNTER') {
     // Apply the new counter-offer to state
-    if (newAmount) applyCounterOffer(newAmount, newTenure || offer.tenure);
-    else if (newTenure) applyCounterOffer(offer.amount, newTenure);
+    if (newAmount || newTenure || newRate) {
+      applyCounterOffer(newAmount || offer.amount, newTenure || offer.tenure, newRate || offer.interestRate);
+    }
   } else if (action === 'ACCEPT') {
     // Finalise and move to consent
     finalizeNegotiation(userText);
@@ -292,7 +301,7 @@ async function _handleNegotiationTurn(userText) {
     window.dispatchEvent(new Event('ai_speaking_end'));
   }
 
-  log('NEGOTIATION', 'INFO', `Round ${round} complete — action: ${action}`, { newAmount, newTenure });
+  log('NEGOTIATION', 'INFO', `Round ${round} complete — action: ${action}`, { newAmount, newTenure, newRate });
 }
 
 /**

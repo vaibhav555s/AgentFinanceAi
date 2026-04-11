@@ -61,11 +61,43 @@ export function calculatePolicyOffer({ income, creditScore, fraudScore = 0, requ
     500000
   );
 
-  // Initial offer: start at 80% of max, or user-requested if within limits
-  const requestedCapped = requestedAmount ? Math.min(requestedAmount, maxAmount) : null;
-  const initialAmount = requestedCapped
-    ? requestedCapped
-    : Math.floor((maxAmount * 0.8) / 10000) * 10000;
+  // Option 1: Standard (Balanced)
+  const stdAmount = Math.floor((maxAmount * 0.8) / 10000) * 10000;
+
+  // Option 2: Max Liquidity (Highest Amount permitted, longer tenure to keep EMI reasonable)
+  const maxLiqTenure = 48; // Extend a bit if possible to keep EMI under FOIR
+  const maxLiqAmount = maxAmount;
+
+  // Option 3: Light EMI (Lower amount, longer tenure for tiny EMI)
+  const lightEmiAmount = Math.max(50000, Math.floor((maxAmount * 0.5) / 10000) * 10000);
+  const lightEmiTenure = 60;
+
+  const alternatives = [
+    {
+      id: 'opt1',
+      title: 'Standard Plan',
+      icon: 'star',
+      amount: stdAmount,
+      tenure: 36,
+      interestRate
+    },
+    {
+      id: 'opt2',
+      title: 'Max Liquidity',
+      icon: 'zap',
+      amount: maxLiqAmount,
+      tenure: maxLiqTenure,
+      interestRate
+    },
+    {
+      id: 'opt3',
+      title: 'Light EMI',
+      icon: 'shield',
+      amount: lightEmiAmount,
+      tenure: lightEmiTenure,
+      interestRate
+    }
+  ];
 
   const policyNote = fraudMultiplier < 1
     ? `Adjusted for elevated risk profile (fraud score: ${fraudScore})`
@@ -73,40 +105,41 @@ export function calculatePolicyOffer({ income, creditScore, fraudScore = 0, requ
 
   log('NEGOTIATION', 'INFO', '📋 Policy offer calculated', {
     income, creditScore, fraudScore,
-    maxAmount, initialAmount, interestRate,
+    maxAmount, interestRate,
   });
 
   return {
     maxAmount,
     minAmount: 50000,
-    initialAmount,
     interestRate,
     maxEMI: Math.round(maxMonthlyEMI),
     policyNote,
+    alternatives
   };
 }
 
 /* ─── Parse AI Action Tag ────────────────────────────── */
 /**
  * Extract the structured action from the LLM response.
- * The LLM appends a machine-readable tag like: [ACTION:COUNTER,AMOUNT:320000,TENURE:36]
+ * The LLM appends a machine-readable tag like: [ACTION:COUNTER,AMOUNT:320000,TENURE:36,RATE:11.5]
  */
 function parseAction(rawText) {
-  const match = rawText.match(/\[ACTION:(\w+)(?:,AMOUNT:(\d+))?(?:,TENURE:(\d+))?\]/);
+  const match = rawText.match(/\[ACTION:(\w+)(?:,AMOUNT:(\d+))?(?:,TENURE:(\d+))?(?:,RATE:([0-9.]+))?\]/);
   if (match) {
     return {
       action: match[1],                            // COUNTER | ACCEPT | DECLINE
       amount: match[2] ? parseInt(match[2]) : null,
       tenure: match[3] ? parseInt(match[3]) : null,
+      rate: match[4] ? parseFloat(match[4]) : null,
     };
   }
   // Soft fallback: detect acceptance phrases
   const lower = rawText.toLowerCase();
   const acceptSignals = ['confirmed', 'accepted', 'locked in', 'proceeding', 'finalising', 'finalizing'];
   if (acceptSignals.some(s => lower.includes(s))) {
-    return { action: 'ACCEPT', amount: null, tenure: null };
+    return { action: 'ACCEPT', amount: null, tenure: null, rate: null };
   }
-  return { action: 'COUNTER', amount: null, tenure: null };
+  return { action: 'COUNTER', amount: null, tenure: null, rate: null };
 }
 
 /* ─── Main Negotiation LLM Call ──────────────────────── */
@@ -143,6 +176,7 @@ export async function processNegotiation({ userText, currentOffer, policyLimits,
 • Minimum amount: ₹${policyLimits.minAmount.toLocaleString('en-IN')}
 • Interest rate: ${policyLimits.interestRate}% p.a. (fixed by credit profile, NOT negotiable)
 • Valid tenures: 12, 24, 36, 48, 60, 72, 84 months
+• REASONING FOR LIMITS: ${policyLimits.policyNote}
 
 ━━━ CURRENT OFFER ON TABLE ━━━
 • Amount  : ₹${currentOffer.amount.toLocaleString('en-IN')}
@@ -159,18 +193,18 @@ ${historyText}
 ━━━ YOUR TASK ━━━
 This is Round ${roundNum}. Respond naturally as if speaking on a call.
 Rules:
-1. If customer requests ABOVE ₹${policyLimits.maxAmount.toLocaleString('en-IN')}: firmly but politely explain the policy cap and counter at ₹${policyLimits.maxAmount.toLocaleString('en-IN')}.
-2. If customer requests amount WITHIN limits: accept their number.
+1. If customer requests ABOVE ₹${policyLimits.maxAmount.toLocaleString('en-IN')}: explain that based on their ${policyLimits.policyNote}, our maximum limit is ₹${policyLimits.maxAmount.toLocaleString('en-IN')}. Be empathetic but firm.
+2. If customer requests amount WITHIN limits (or a LOWER amount): accept it happily.
 3. If customer wants different tenure (and it's 12/24/36/48/60/72/84): recalculate EMI and confirm.
-4. If customer says "yes", "okay", "fine", "accepted", "deal", "haan", "theek hai", "I agree", "go ahead", "proceed": ACCEPT.
-5. If customer declines or is unsure: empathetically ask what they'd prefer.
-6. Interest rate is NEVER negotiable — if asked, explain it's locked to credit profile.
-7. Keep response under 25 words. Speak naturally. No markdown.
+4. If customer requests a HIGHER interest rate (which favors the bank), ACCEPT IT.
+5. If customer requests a LOWER interest rate, firmly explain it is locked to their credit profile and cannot be decreased.
+6. If customer says "yes", "okay", "fine", "accepted", "deal", "haan", "theek hai", "I agree", "go ahead", "proceed": ACCEPT.
+7. Keep response under 30 words. Speak naturally. No markdown.
 
 REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):
-[ACTION:COUNTER,AMOUNT:250000,TENURE:36]   ← to counter with new terms
-[ACTION:ACCEPT]                             ← customer accepted current offer
-[ACTION:DECLINE]                            ← customer declined / dropped`;
+[ACTION:COUNTER,AMOUNT:250000,TENURE:36,RATE:10.5]   ← to counter with new terms
+[ACTION:ACCEPT]                                      ← customer accepted current offer
+[ACTION:DECLINE]                                     ← customer declined / dropped`;
 
   try {
     const res = await fetch(GROQ_API_URL, {
@@ -199,6 +233,7 @@ REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):
       action: parsed.action,
       newAmount: parsed.amount,
       newTenure: parsed.tenure,
+      newRate: parsed.rate,
       response: spokenMessage.slice(0, 80),
     });
 
@@ -207,6 +242,7 @@ REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):
       action: parsed.action,   // 'COUNTER' | 'ACCEPT' | 'DECLINE'
       newAmount: parsed.amount,
       newTenure: parsed.tenure,
+      newRate: parsed.rate,
       round: roundNum,
     };
 
@@ -222,6 +258,5 @@ REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):
  * Called once when OFFER phase starts.
  */
 export function buildOpeningOfferScript(offer, policyLimits) {
-  const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
-  return `Based on your profile and credit score, I am pleased to offer you ₹${(offer.amount / 100000).toFixed(1)} lakh at ${offer.interestRate}% per annum for ${offer.tenure} months. Your monthly EMI would be ₹${emi.toLocaleString('en-IN')}. Would you like to accept these terms, or would you prefer to discuss the amount or tenure?`;
+  return `I have generated three personalised loan options based on your profile, which you can see on the screen. Do you want to select one of these, or would you like to negotiate the amount or tenure?`;
 }
