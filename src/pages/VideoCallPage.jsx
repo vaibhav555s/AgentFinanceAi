@@ -5,8 +5,7 @@ import {
   Mic, MicOff, Video, VideoOff, Lock, User, Shield, Tag,
   CheckCircle, Star, FileText, Upload, Eye, SlidersHorizontal,
   Download, ChevronLeft, ChevronRight, ScanFace, CheckCircle2,
-  ShieldCheck, Zap, AlertTriangle,
-  ShieldCheck, Zap, Loader2, PhoneOff, Users,
+  ShieldCheck, Zap, AlertTriangle, PhoneOff, Users,
 } from 'lucide-react';
 import useAudioCapture from '../hooks/useAudioCapture.js';
 import useAIState from '../hooks/useAIState.js';
@@ -1031,8 +1030,7 @@ function ProgressStepper({ currentStage }) {
 }
 
 /* ─── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isListening, micError, isProcessing }) {
-function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
+function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isListening, micError, isProcessing, onJoined }) {
   const [callJoined, setCallJoined] = useState(false);
 
   return (
@@ -1051,7 +1049,7 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
           roomName={roomName}
           isMicOn={isMicOn}
           isVideoOn={isVideoOn}
-          onJoined={() => setCallJoined(true)}
+          onJoined={() => { setCallJoined(true); onJoined?.(); }}
         />
       </div>
 
@@ -1335,10 +1333,14 @@ export default function VideoCallPage() {
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [loanAmount, setLoanAmount] = useState(200000);
   const [tenure, setTenure] = useState(60);
+  // Gate audio capture on Jitsi join — prevents competing for mic before Jitsi connects
+  const [sessionJoined, setSessionJoined] = useState(false);
 
   // ─── AI Hooks ─────────────────────────────────────────
-  const { isListening, micError, isProcessing } = useAudioCapture(isMicOn);
+  // Only start recording after Jitsi has joined so the streams don't conflict
+  const { isListening, micError, isProcessing } = useAudioCapture(isMicOn && sessionJoined);
   const aiState = useAIState({ debounceMs: 500 });
+
   // Derive a safe Jitsi room name from the URL token
   // Must be alphanumeric + hyphens only; prefix with 'agentfinance-'
   const roomName = `agentfinance-${(token || 'demo').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
@@ -1364,6 +1366,7 @@ export default function VideoCallPage() {
           isMicOn={isMicOn} setIsMicOn={setIsMicOn}
           isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
           isListening={isListening} micError={micError} isProcessing={isProcessing}
+          onJoined={() => setSessionJoined(true)}
         />
         <RightPanel
           currentStage={currentStage} setCurrentStage={setCurrentStage}
@@ -1389,6 +1392,7 @@ export default function VideoCallPage() {
             isMicOn={isMicOn} setIsMicOn={setIsMicOn}
             isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
             isListening={isListening} micError={micError} isProcessing={isProcessing}
+            onJoined={() => setSessionJoined(true)}
           />
         </div>
         {/* Context panel — fills rest */}
