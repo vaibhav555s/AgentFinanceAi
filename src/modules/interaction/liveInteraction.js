@@ -193,10 +193,11 @@ export async function processAudio(audioBlob) {
     addTranscript('user', sttResult.text, sttResult.confidence);
     incrementUtterances();
 
-    // Step 3: Trigger debounced AI processing
-    debouncedPipeline.call();
+    // Step 3: Run AI processing immediately (no debounce for PTT)
+    debouncedPipeline.cancel();
+    await runAIPipeline();
 
-    // Return current state (AI results may arrive after debounce)
+    // Return current state
     return {
       transcribedText: sttResult.text,
       confidence: sttResult.confidence,
@@ -241,7 +242,8 @@ export function processText(text) {
   addTranscript('user', text, 1.0);
   incrementUtterances();
 
-  // Run AI immediately (no debounce for direct text)
+  // Run AI immediately
+  debouncedPipeline.cancel();
   runAIPipeline();
 
   return {
