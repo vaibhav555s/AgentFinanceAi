@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage';
 import VideoCallPage from './pages/VideoCallPage';
 import OpsDashboard from './pages/OpsDashboard';
 import CompliancePage from './pages/CompliancePage';
+import { AadhaarVerificationPage } from './modules/aadhaar-verification';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -37,6 +38,17 @@ function AppLayout() {
           <Route path="/session/:token" element={<VideoCallPage />} />
           <Route path="/ops" element={<OpsDashboard />} />
           <Route path="/compliance" element={<CompliancePage />} />
+          <Route
+            path="/verify-aadhaar"
+            element={
+              <AadhaarVerificationPage
+                onVerified={(data) => {
+                  console.log('[APP] Aadhaar verified:', data);
+                  alert('✅ Aadhaar Verified! Name: ' + data.name);
+                }}
+              />
+            }
+          />
           {/* Catch-all — redirect home */}
           <Route path="*" element={<NotFound />} />
         </Routes>
