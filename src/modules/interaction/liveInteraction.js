@@ -21,6 +21,7 @@ import { assessRisk } from '../ai/risk.js';
 import { detectConsent, resetConsent } from '../ai/consent.js';
 import { generateResponse } from '../ai/chat.js';
 import { synthesizeAndPlay, isAudioPlaying } from '../tts/sarvamTTS.js';
+import { predictAgeFromFrame } from '../ai/vision.js';
 import {
   getState,
   updateExtractedData,
@@ -260,6 +261,37 @@ export function processText(text) {
 }
 
 /**
+ * Process a captured video frame for age prediction.
+ * 
+ * @param {string} base64Image - Captured frame from webcam
+ */
+export async function processVideoFrame(base64Image) {
+  log('INTERACTION', 'INFO', 'Processing video frame for visual analysis');
+
+  try {
+    const { age, confidence } = await predictAgeFromFrame(base64Image);
+
+    if (age !== null) {
+      console.log(`[VIDEO_ANALYSIS] Age predicted: ${age} (confidence: ${confidence})`);
+      const currentState = getState();
+      const nextExtraction = {
+        ...currentState.extractedData,
+        age: {
+          value: age,
+          confidence: confidence,
+          source: 'video_analysis',
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      updateExtractedData(nextExtraction, [`age: (predicted) ${age}`]);
+    }
+  } catch (error) {
+    log('INTERACTION', 'ERROR', 'processVideoFrame failed', error.message);
+  }
+}
+
+/**
  * Force-run the AI pipeline immediately (bypass debounce).
  * Useful when you need real-time results (e.g., before consent step).
  */
@@ -301,6 +333,7 @@ export function reset() {
 export default {
   processAudio,
   processText,
+  processVideoFrame,
   forceProcess,
   getCurrentOutput,
   getFullTranscript,

@@ -230,6 +230,7 @@ export function getStructuredOutput() {
       loanAmount: state.extractedData.loanAmount.value,
       purpose: state.extractedData.purpose.value,
       employment: state.extractedData.employment.value,
+      age: state.extractedData.age.value,
     },
     confidences: {
       name: state.extractedData.name.confidence,
@@ -237,6 +238,7 @@ export function getStructuredOutput() {
       loanAmount: state.extractedData.loanAmount.confidence,
       purpose: state.extractedData.purpose.confidence,
       employment: state.extractedData.employment.confidence,
+      age: state.extractedData.age.confidence,
     },
     risk: {
       level: state.risk.level,

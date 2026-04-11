@@ -129,6 +129,11 @@ function buildKYCFields(extractedData) {
       confidence: confidenceLabel(extractedData.income?.confidence || 0),
     },
     {
+      label: 'Estimated Age',
+      value: extractedData.age?.value ? `${extractedData.age.value} yrs` : '—',
+      confidence: confidenceLabel(extractedData.age?.confidence || 0),
+    },
+    {
       label: 'Loan Purpose',
       value: purposeLabel(extractedData.purpose?.value),
       confidence: confidenceLabel(extractedData.purpose?.confidence || 0),

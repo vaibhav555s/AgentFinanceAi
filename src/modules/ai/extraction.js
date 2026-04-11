@@ -63,12 +63,12 @@ function parseAmount(raw) {
 /* ─── Purpose Keywords ───────────────────────────────── */
 
 const PURPOSE_KEYWORDS = {
-  medical:   ['medical', 'hospital', 'surgery', 'treatment', 'health', 'doctor', 'medicine', 'illness', 'disease'],
+  medical: ['medical', 'hospital', 'surgery', 'treatment', 'health', 'doctor', 'medicine', 'illness', 'disease'],
   education: ['education', 'college', 'university', 'school', 'study', 'tuition', 'course', 'degree', 'exam'],
-  home:      ['home', 'house', 'renovation', 'construction', 'flat', 'apartment', 'property', 'building', 'repair'],
-  personal:  ['personal', 'wedding', 'marriage', 'travel', 'vacation', 'family', 'emergency', 'expense'],
-  business:  ['business', 'startup', 'shop', 'company', 'invest', 'investment', 'capital', 'trade', 'inventory'],
-  vehicle:   ['car', 'bike', 'vehicle', 'scooter', 'auto', 'motorcycle', 'truck'],
+  home: ['home', 'house', 'renovation', 'construction', 'flat', 'apartment', 'property', 'building', 'repair'],
+  personal: ['personal', 'wedding', 'marriage', 'travel', 'vacation', 'family', 'emergency', 'expense'],
+  business: ['business', 'startup', 'shop', 'company', 'invest', 'investment', 'capital', 'trade', 'inventory'],
+  vehicle: ['car', 'bike', 'vehicle', 'scooter', 'auto', 'motorcycle', 'truck'],
   agriculture: ['agriculture', 'farming', 'crop', 'tractor', 'land', 'harvest', 'seeds'],
 };
 
@@ -131,12 +131,12 @@ function extractName(text) {
 /* ─── Employment Detection ───────────────────────────── */
 
 const EMPLOYMENT_KEYWORDS = {
-  salaried:    ['salaried', 'salary', 'job', 'employed', 'company', 'office', 'mra', 'working at', 'work at', 'work in'],
+  salaried: ['salaried', 'salary', 'job', 'employed', 'company', 'office', 'mra', 'working at', 'work at', 'work in'],
   self_employed: ['self employed', 'self-employed', 'freelance', 'own business', 'shop owner', 'businessman', 'entrepreneur'],
-  government:  ['government', 'govt', 'sarkari', 'public sector', 'psu'],
-  retired:     ['retired', 'pension', 'ex-service'],
-  student:     ['student', 'studying', 'college'],
-  unemployed:  ['unemployed', 'jobless', 'no job', 'not working'],
+  government: ['government', 'govt', 'sarkari', 'public sector', 'psu'],
+  retired: ['retired', 'pension', 'ex-service'],
+  student: ['student', 'studying', 'college'],
+  unemployed: ['unemployed', 'jobless', 'no job', 'not working'],
 };
 
 /**
@@ -342,7 +342,7 @@ export function mergeExtractedData(previous, incoming) {
   const merged = { ...previous };
   const changes = [];
 
-  for (const field of ['name', 'income', 'loanAmount', 'purpose', 'employment']) {
+  for (const field of ['name', 'income', 'loanAmount', 'purpose', 'employment', 'age']) {
     const prev = previous[field];
     const next = incoming[field];
 
@@ -394,6 +394,7 @@ export function emptyExtraction() {
     loanAmount: { ...empty },
     purpose: { ...empty },
     employment: { ...empty },
+    age: { ...empty },
   };
 }
 
