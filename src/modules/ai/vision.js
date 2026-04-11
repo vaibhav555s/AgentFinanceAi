@@ -44,7 +44,7 @@ export async function predictAgeFromFrame(base64Image) {
                     content: [
                         {
                             type: 'text',
-                            text: 'Analyze this image: 1) Estimate the numeric age of the person. 2) Determine if this is a live person physically standing in front of the camera. The DEFAULT state is true. You must ONLY set `isLivePerson: false` if you explicitly see a hand holding a glowing phone screen, or a hand holding a printed picture. If the image is just a person staring at a camera (even with webcam glare or a busy background), assume it is live and set to true. If NO human face is found in the image at all, return {"age": 0, "isLivePerson": false}. Respond EXACTLY in this JSON format: {"age": 25, "isLivePerson": true}. Output ONLY valid JSON.'
+                            text: 'Analyze this image for biometric liveness. IMPORTANT: You are a security scanner. Look for indicators of a "presentation attack" or spoofing. \n\nCheck for:\n1) Phone or Monitor borders (black bezels around the person).\n2) Moiré patterns or screen pixels (grid-like interference).\n3) Glowing glare or reflections on a phone screen glass.\n4) Static photographs or paper printouts (flat textures, white borders).\n\nIf the image looks like a screen being held up to a camera, or a printed photo, set `isLivePerson: false`. \nIf NO human face is clearly visible, or the room is pitch black, set `isLivePerson: false`. \nONLY set `isLivePerson: true` if you are confident it is a real human in a natural 3D environment.\n\nAlso estimate the numeric age.\nRespond ONLY in this JSON format: {"age": 25, "isLivePerson": true}.'
                         },
                         {
                             type: 'image_url',
@@ -86,9 +86,19 @@ export async function predictAgeFromFrame(base64Image) {
         }
 
         // isLivePerson is handled independently of whether the model successfully guessed an age string
-        const isLivePerson = Boolean(result.isLivePerson);
+        // Cast to boolean explicitly (handles both actual booleans and string "true"/"false")
+        const isLivePerson = String(result.isLivePerson).toLowerCase() === 'true';
 
-        return { age: finalAge, isLivePerson, confidence: finalAge ? 0.85 : 0.5 };
+        // Post-processing security guard: if we have NO confidence in age (0 or null), it likely means NO FACE found
+        const finalLiveness = (finalAge === null) ? false : isLivePerson;
+
+        // Developer Bypass Toggle (env-based)
+        if (import.meta.env.VITE_BYPASS_LIVENESS === 'true') {
+            log('VISION', 'WARN', 'Bypassing liveness result (VITE_BYPASS_LIVENESS=true)');
+            return { age: finalAge || 25, isLivePerson: true, confidence: 0.99 };
+        }
+
+        return { age: finalAge, isLivePerson: finalLiveness, confidence: finalAge ? 0.85 : 0.5 };
     } catch (error) {
         const status = error.response?.status;
         const errData = error.response?.data;
@@ -98,10 +108,10 @@ export async function predictAgeFromFrame(base64Image) {
         if (status === 429) {
             const errMsg = errData?.error?.message || '';
 
-            // Daily quota exhausted — enter a 6-hour cooldown, no point retrying today
+            // Daily quota exhausted — enter a brief cooldown to avoid spamming
             if (errMsg.includes('tokens per day') || errMsg.includes('TPD')) {
-                rateLimitCooldownUntil = Date.now() + 6 * 60 * 60 * 1000;
-                log('VISION', 'WARN', 'Daily token limit hit — entering 6-hour cooldown');
+                rateLimitCooldownUntil = Date.now() + 5 * 60 * 1000; // 5 minute lockout instead of 6 hours
+                log('VISION', 'WARN', 'Daily token limit hit — entering 5-minute cooldown');
             } else {
                 // Parse "Please try again in Xm Ys" or "Xs" from the error message
                 let cooldownMs = 60000; // default 60s
