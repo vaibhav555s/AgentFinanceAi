@@ -5,34 +5,12 @@ import {
   Mic, MicOff, Video, VideoOff, Lock, User, Shield, Tag,
   CheckCircle, Star, FileText, Upload, Eye, SlidersHorizontal,
   Download, ChevronLeft, ChevronRight, ScanFace, CheckCircle2,
-  ShieldCheck, Zap, AlertTriangle, PhoneOff, Users,
+  ShieldCheck, Zap, AlertTriangle, Activity, Cpu, ArrowRight,
+  Fingerprint, Banknote, PhoneOff,
 } from 'lucide-react';
+import useAudioCapture from '../hooks/useAudioCapture.js';
+import useAIState from '../hooks/useAIState.js';
 
-/* ─── Constants ──────────────────────────────────────── */
-const CAPTIONS = [
-  'Tell me about your monthly income...',
-  'Can you share your employment details?',
-  'What would you use this loan for?',
-  'Let me verify your details...',
-  'Great, processing your application...',
-];
-
-const STEPS = [
-  { icon: User, label: 'KYC' },
-  { icon: Shield, label: 'Verify' },
-  { icon: Tag, label: 'Offer' },
-  { icon: CheckCircle, label: 'Consent' },
-  { icon: Star, label: 'Done' },
-];
-
-const KYC_FIELDS = [
-  { label: 'Full Name', value: 'Rahul Sharma', confidence: 'High' },
-  { label: 'Age', value: '32', confidence: 'High' },
-  { label: 'Employment Type', value: 'Salaried — Private Sector', confidence: 'High' },
-  { label: 'Monthly Income', value: '₹85,000', confidence: 'Medium' },
-  { label: 'Loan Purpose', value: 'Home Renovation', confidence: 'High' },
-  { label: 'Requested Amount', value: '₹3,00,000', confidence: 'High' },
-];
 
 /* ─── Helpers ────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -120,8 +98,8 @@ function Typewriter() {
   );
 }
 
-/* ─── Fluid Voice Visualizer ─────────────────────────── */
-function FluidVoiceVisualizer() {
+/* ─── Speaking Bars ──────────────────────────────────── */
+function SpeakingBars() {
   const bars = Array.from({ length: 12 });
   return (
     <div className="flex items-center gap-[4px] h-10">
@@ -137,53 +115,29 @@ function FluidVoiceVisualizer() {
   );
 }
 
-/* ─── Confidence Badge ───────────────────────────────── */
+/* ─── Confidence Badge ──────────────────────────────── */
 function ConfBadge({ level }) {
   const cfg = {
-    High: { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    Medium: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
-    Low: { color: '#EF4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
-  }[level];
+    '99.8%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    '98.5%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    '99.1%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    '94.2%': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
+    '97.0%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    '99.9%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    'High': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    'Medium': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
+    'Low': { color: '#EF4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
+  }[level] || { color: '#64748B', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.25)' };
   return (
-    <div className="relative flex items-center justify-center w-[320px] h-[320px]">
-      {/* Outer ambient glow */}
-      <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.15) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-
-      {/* Expanding ripples */}
-      <motion.div
-        animate={{ scale: [1, 1.4, 1], opacity: [0, 0.15, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute inset-0 rounded-full"
-        style={{ border: `1px solid ${colors.accent}` }}
-      />
-      <motion.div
-        animate={{ scale: [1, 1.8, 1], opacity: [0, 0.05, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1.25 }}
-        className="absolute inset-0 rounded-full"
-        style={{ border: `1px solid ${colors.accent}` }}
-      />
-
-      {/* Central Core */}
-      <motion.div
-        animate={{ rotate: 360, scale: [1, 1.05, 1] }}
-        transition={{
-          rotate: { duration: 30, repeat: Infinity, ease: 'linear' },
-          scale: { duration: 4, repeat: Infinity, ease: 'easeInOut' }
-        }}
-        className="relative z-10 flex items-center justify-center"
-        style={{
-          width: 130, height: 130, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #050505 0%, #171717 100%)',
-          boxShadow: `0 0 50px rgba(56, 189, 248, 0.25), inset 0 0 30px rgba(56, 189, 248, 0.4), inset 0 0 8px rgba(255,255,255,0.5)`,
-          border: `1px solid rgba(56, 189, 248, 0.4)`
-        }}
-      >
-        <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9), transparent 45%)', mixBlendMode: 'overlay', opacity: 0.6 }} />
-        <Cpu size={32} style={{ color: 'rgba(255,255,255,0.9)' }} />
-      </motion.div>
-    </div>
+    <span
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+      style={{ color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}
+    >
+      {level}
+    </span>
   );
 }
+
 
 /* ─── Stage 1 — KYC ──────────────────────────────────── */
 function Stage1KYC() {
@@ -202,15 +156,7 @@ function Stage1KYC() {
       const t = setTimeout(() => setVisible(v => v + 1), 420);
       return () => clearTimeout(t);
     }
-  }, [visible, kycFields.length]);
-
-  // Re-trigger animation when new fields arrive with values
-  const filledCount = kycFields.filter(f => f.value !== '—').length;
-  useEffect(() => {
-    if (filledCount > 0 && visible < filledCount) {
-      setVisible(filledCount);
-    }
-  }, [filledCount]);
+  }, [visible]);
 
   return (
     <div className="p-4 flex flex-col gap-3">
@@ -245,7 +191,7 @@ function Stage1KYC() {
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{f.label}</span>
                   <span className="font-semibold truncate" style={{ fontSize: 13, color: 'var(--text-primary)', marginTop: 1 }}>{f.value}</span>
                 </div>
-                <ConfBadge level={f.confidence} />
+                <ConfBadge level={f.conf} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -626,57 +572,228 @@ function Stage5Complete({ token, loanAmount, tenure }) {
   );
 }
 
-/* ─── Control Panels ─────────────────────────────────── */
-function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
+
+
+/* ─── Jitsi Script Loader ─────────────────────── */
+function useJitsiScript() {
+  const [loaded, setLoaded] = useState(
+    typeof window !== 'undefined' && !!window.JitsiMeetExternalAPI
+  );
+  useEffect(() => {
+    if (loaded) return;
+    const existing = document.getElementById('jitsi-api-script');
+    if (existing) {
+      existing.addEventListener('load', () => setLoaded(true));
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'jitsi-api-script';
+    script.src = 'https://meet.jit.si/external_api.js';
+    script.async = true;
+    script.onload = () => setLoaded(true);
+    script.onerror = () => console.error('Failed to load Jitsi API');
+    document.head.appendChild(script);
+  }, [loaded]);
+  return loaded;
+}
+
+/* ─── Jitsi Meet Embed ────────────────────────── */
+function JitsiMeetEmbed({ roomName, isMicOn, isVideoOn, onJoined }) {
+  const containerRef = useRef(null);
+  const apiRef = useRef(null);
+  const scriptLoaded = useJitsiScript();
+  const [showLobby, setShowLobby] = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  // Initialise Jitsi once script is ready
+  useEffect(() => {
+    if (!scriptLoaded || !containerRef.current) return;
+    if (apiRef.current) return;
+
+    try {
+      const api = new window.JitsiMeetExternalAPI('meet.jit.si', {
+        roomName,
+        parentNode: containerRef.current,
+        width: '100%',
+        height: '100%',
+        configOverwrite: {
+          startWithAudioMuted: !isMicOn,
+          startWithVideoMuted: !isVideoOn,
+          prejoinPageEnabled: false,
+          disableDeepLinking: true,
+          disableInviteFunctions: true,
+          toolbarButtons: [],
+          hideConferenceSubject: true,
+          hideConferenceTimer: true,
+          hideLobbyButton: true,
+          disableRemoteMute: true,
+          enableClosePage: false,
+        },
+        interfaceConfigOverwrite: {
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          SHOW_BRAND_WATERMARK: false,
+          SHOW_POWERED_BY: false,
+          SHOW_PROMOTIONAL_CLOSE_PAGE: false,
+          TOOLBAR_BUTTONS: [],
+          MOBILE_APP_PROMO: false,
+          DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+          DEFAULT_BACKGROUND: '#0D0D14',
+          VIDEO_QUALITY_LABEL_DISABLED: true,
+        },
+      });
+
+      apiRef.current = api;
+
+      api.addEventListener('videoConferenceJoined', () => {
+        setShowLobby(false);
+        onJoined?.();
+      });
+
+      api.addEventListener('videoConferenceLeft', () => {
+        setShowLobby(true);
+      });
+
+      api.addEventListener('errorOccurred', (err) => {
+        console.error('Jitsi error:', err);
+        if (err?.error?.isFatal) setHasError(true);
+      });
+
+    } catch (e) {
+      console.error('Failed to initialize Jitsi:', e);
+      setHasError(true);
+    }
+
+    return () => {
+      apiRef.current?.dispose();
+      apiRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptLoaded, roomName]);
+
+  // Auto-dismiss lobby after 12s in case the event never fires
+  useEffect(() => {
+    if (!showLobby) return;
+    const t = setTimeout(() => {
+      setShowLobby(false);
+      onJoined?.();
+    }, 12000);
+    return () => clearTimeout(t);
+  }, [showLobby, onJoined]);
+
+  // Sync mic state with Jitsi
+  const prevMicRef = useRef(isMicOn);
+  useEffect(() => {
+    if (!apiRef.current || showLobby) return;
+    if (prevMicRef.current !== isMicOn) {
+      apiRef.current.executeCommand('toggleAudio');
+      prevMicRef.current = isMicOn;
+    }
+  }, [isMicOn, showLobby]);
+
+  // Sync video state with Jitsi
+  const prevVideoRef = useRef(isVideoOn);
+  useEffect(() => {
+    if (!apiRef.current || showLobby) return;
+    if (prevVideoRef.current !== isVideoOn) {
+      apiRef.current.executeCommand('toggleVideo');
+      prevVideoRef.current = isVideoOn;
+    }
+  }, [isVideoOn, showLobby]);
+
   return (
-    <div
-      className="flex items-stretch px-3 py-3"
-      style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
-    >
-      {STEPS.map((step, i) => {
-        const stage = i + 1;
-        const done = stage < currentStage;
-        const active = stage === currentStage;
-        const Icon = step.icon;
-        return (
-          <div key={step.label} className="flex-1 flex flex-col items-center gap-1 relative">
-            {/* Connector line */}
-            {i < STEPS.length - 1 && (
-              <div
-                style={{
-                  position: 'absolute', top: 14, left: '50%', width: '100%', height: 2, zIndex: 0,
-                  background: done ? '#10B981' : 'rgba(255,255,255,0.07)',
-                  transition: 'background 0.4s ease',
-                }}
-              />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Jitsi iframe container — ALWAYS fully visible so browser can show permission prompts */}
+      <div
+        ref={containerRef}
+        style={{ width: '100%', height: '100%' }}
+      />
+
+      {/* Lobby overlay — sits on top and fades away once joined */}
+      <AnimatePresence>
+        {showLobby && (
+          <motion.div
+            key="lobby"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.55 }}
+            style={{
+              position: 'absolute', inset: 0,
+              background: 'radial-gradient(ellipse at 50% 50%, #0F1628 0%, #0D0D14 60%, #080810 100%)',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 24,
+              pointerEvents: 'none', // let clicks pass through to the iframe below
+              zIndex: 10,
+            }}
+          >
+            {hasError ? (
+              <>
+                <div style={{
+                  width: 72, height: 72, borderRadius: '50%',
+                  background: 'rgba(239,68,68,0.1)', border: '2px solid rgba(239,68,68,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <PhoneOff size={28} style={{ color: '#EF4444' }} />
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 600, color: '#F8FAFC', marginBottom: 6 }}>
+                    Connection Failed
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 220, textAlign: 'center' }}>
+                    Could not connect. Please check your internet connection and refresh.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Ambient glow ring */}
+                <div style={{ position: 'relative' }}>
+                  <motion.div
+                    animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{
+                      position: 'absolute', inset: -20, borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(59,130,246,0.25) 0%, transparent 70%)',
+                      filter: 'blur(14px)',
+                    }}
+                  />
+                  <div style={{
+                    width: 100, height: 100, borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.04)',
+                    backdropFilter: 'blur(24px)',
+                    border: '2px solid rgba(59,130,246,0.5)',
+                    boxShadow: '0 0 30px rgba(59,130,246,0.4)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'relative', zIndex: 1,
+                  }}>
+                    <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: '#3B82F6' }}>AI</span>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 600, color: '#F8FAFC', marginBottom: 6 }}>
+                    Connecting to Session
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Room: <span style={{ color: '#60A5FA', fontFamily: 'monospace' }}>{roomName}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                    style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6', flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Allow camera &amp; mic in your browser to join
+                  </span>
+                </div>
+              </>
             )}
-            {/* Circle */}
-            <div
-              className={active ? 'stage-active-pulse' : ''}
-              style={{
-                width: 28, height: 28, borderRadius: '50%', zIndex: 1, position: 'relative',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: done ? 'rgba(16,185,129,0.18)' :
-                  active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)',
-                border: done ? '1.5px solid rgba(16,185,129,0.5)' :
-                  active ? '1.5px solid rgba(59,130,246,0.55)' : '1.5px solid rgba(255,255,255,0.08)',
-              }}
-            >
-              {done
-                ? <CheckCircle size={13} style={{ color: '#10B981' }} />
-                : <Icon size={13} style={{ color: active ? '#3B82F6' : '#475569' }} />
-              }
-            </div>
-            {/* Label — hidden on very small mobile */}
-            <span
-              className="text-[9px] sm:text-[10px] text-center leading-tight hidden sm:block"
-              style={{ color: done ? '#10B981' : active ? '#3B82F6' : 'var(--text-muted)' }}
-            >
-              {step.label}
-            </span>
-          </div>
-        );
-      })}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -930,6 +1047,7 @@ export default function VideoCallPage() {
         }}
       >
         <LeftPanel
+          roomName={roomName}
           isMicOn={isMicOn} setIsMicOn={setIsMicOn}
           isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
           isListening={isListening} micError={micError} isProcessing={isProcessing}
@@ -954,6 +1072,7 @@ export default function VideoCallPage() {
         {/* Video — top 42% */}
         <div style={{ flex: '0 0 42%', position: 'relative', overflow: 'hidden' }}>
           <LeftPanel
+            roomName={roomName}
             isMicOn={isMicOn} setIsMicOn={setIsMicOn}
             isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
             isListening={isListening} micError={micError} isProcessing={isProcessing}
