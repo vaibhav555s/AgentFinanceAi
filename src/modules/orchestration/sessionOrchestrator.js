@@ -27,6 +27,16 @@ import {
 import { synthesizeAndPlay } from '../tts/sarvamTTS.js';
 import { addTranscript } from '../transcript/transcriptManager.js';
 import { log } from '../utils/logger.js';
+import { 
+  initLoanApplication, 
+  saveKycRecord, 
+  saveBureauReport, 
+  saveLoanOffers, 
+  saveTranscript,
+  completeApplication,
+  updateApplicationFinancials,
+  uploadMedia
+} from '../../services/dbService.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -136,11 +146,25 @@ function notify() {
 /* ─── Phase Transitions ──────────────────────────────── */
 
 /** Called by the AI pipeline when all basic KYC data is collected */
-export function triggerAadhaarUpload() {
+export async function triggerAadhaarUpload() {
   if (state.phase !== PHASES.CHAT) return;
   state = { ...state, phase: PHASES.AADHAAR_UPLOAD };
   log('ORCHESTRATOR', 'INFO', '→ AADHAAR_UPLOAD');
   notify();
+
+  // Initialize application in Supabase
+  const appId = await initLoanApplication();
+  
+  // A. PERSIST VERBAL DATA: Save the income/purpose/employment extracted from voice
+  try {
+    const { getState } = await import('../state/stateManager.js');
+    const aiState = getState();
+    await updateApplicationFinancials(aiState.extractedData);
+  } catch (err) {
+    log('ORCHESTRATOR', 'WARN', 'Failed to save verbal financial profile', err);
+  }
+
+  log('ORCHESTRATOR', 'INFO', `DB application created: ${appId}`);
 }
 
 /** Called when user has uploaded the Aadhaar file */
@@ -206,6 +230,17 @@ export async function triggerAadhaarVerify(file) {
       photo: parsed.photo || null,
     };
 
+    // C. AUDITABILITY: Upload Aadhaar image (raw file) to Supabase Storage
+    let aadhaarImageUrl = null;
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const fileName = `aadhaar.${ext}`;
+      aadhaarImageUrl = await uploadMedia('docs', fileName, file);
+    } catch (err) {
+      log('ORCHESTRATOR', 'WARN', 'Aadhaar upload to storage failed', err);
+    }
+    aadhaarData.storageUrl = aadhaarImageUrl;
+
     // ── Step 4: Cross-verify stated name/age vs Aadhaar ──────────────
     let kycMismatch = {
       checked: true, flagged: false, nameMismatch: false, ageMismatch: false,
@@ -221,16 +256,22 @@ export async function triggerAadhaarVerify(file) {
       kycMismatch.statedName = statedName;
       kycMismatch.statedAge = statedAge;
 
-      // Name mismatch: fuzzy compare first tokens (allow distance <= 2)
+      // Name mismatch: fuzzy compare first tokens (allow distance <= 4 and basic phonetic equivalence)
       if (statedName && aadhaarData.name) {
         const normalize = s => s.toLowerCase().replace(/[^a-z ]/g, '').trim();
+        // Remove h, vowels after first char for a very rough phonetic check
+        const soundexIsh = s => s.charAt(0) + s.slice(1).replace(/[aeiouh]/g, '');
+
         const statedFirst = normalize(statedName).split(' ')[0];
         const aadhaarFirst = normalize(aadhaarData.name).split(' ')[0];
 
         if (statedFirst && aadhaarFirst) {
           const dist = _levenshteinDistance(statedFirst, aadhaarFirst);
-          // If distance > 2 and it is not a direct substring in either direction, flag it
-          if (dist > 2 && !aadhaarFirst.includes(statedFirst) && !statedFirst.includes(aadhaarFirst)) {
+          const soundStated = soundexIsh(statedFirst);
+          const soundAadhaar = soundexIsh(aadhaarFirst);
+
+          // If distance > 4 AND they don't sound similar AND not a substring
+          if (dist > 4 && soundStated !== soundAadhaar && !aadhaarFirst.includes(statedFirst) && !statedFirst.includes(aadhaarFirst)) {
             kycMismatch.nameMismatch = true;
           }
         }
@@ -320,6 +361,31 @@ function _triggerFaceScan() {
       confidence: estimatedAge !== null ? 0.85 : 0.5,
     };
 
+    // C. AUDITABILITY: Capture and upload face frame to Supabase Storage
+    let faceCaptureUrl = null;
+    try {
+      const video = document.querySelector('video');
+      if (video) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const frameData = canvas.toDataURL('image/jpeg', 0.8);
+        faceCaptureUrl = await uploadMedia('scans', 'face_check.jpg', frameData);
+      }
+    } catch (err) {
+      log('ORCHESTRATOR', 'WARN', 'Face capture upload failed', err);
+    }
+
+    try {
+      const { getState } = await import('../state/stateManager.js');
+      // Pass both Aadhaar data and Media URLs for full auditable record
+      saveKycRecord(getState().extractedData, faceAge, state.aadhaar, {
+        aadhaar: state.aadhaar.storageUrl,
+        face: faceCaptureUrl
+      });
+    } catch { /* ignore */ }
+
     state = {
       ...state,
       phase: PHASES.FACE_DONE,
@@ -355,6 +421,7 @@ async function _triggerBureau() {
       aadhaarRef: state.aadhaar.aadhaarNumber || 'N/A',
     });
     log('ORCHESTRATOR', 'INFO', 'Bureau API response', bureauResponse);
+    // saveBureauReport is called later after policy reasoning is ready
 
     // Format DPD for display
     const maxDPD = bureauResponse.dpdHistory?.length
@@ -386,6 +453,9 @@ async function _triggerBureau() {
       },
     });
     log('ORCHESTRATOR', 'INFO', `Policy decision: ${policyResult.decision}`, policyResult.rules);
+    
+    // D. PERSIST REASONING: Save bureau data along with rule-by-rule audit reasoning
+    saveBureauReport(bureauResponse, policyResult.rules);
 
     // ── Step 4: Build bureau state ──
     const bureauState = {
@@ -411,6 +481,10 @@ async function _triggerBureau() {
         tenure: 36,
         interestRate: policyLimits.interestRate,
       };
+
+      if (policyLimits.alternatives) {
+        saveLoanOffers(policyLimits.alternatives);
+      }
 
       state = {
         ...state,
@@ -444,6 +518,7 @@ async function _triggerBureau() {
       // FAIL 
       state = { ...state, bureau: bureauState, policy: policyResult, phase: PHASES.BUREAU };
       log('ORCHESTRATOR', 'WARN', '→ BUREAU FAIL — application rejected', policyResult);
+      completeApplication('rejected');
       _speakError('Unfortunately, based on our credit assessment, we are unable to extend a loan offer at this time. Thank you for your time.');
     }
     notify();
@@ -481,6 +556,20 @@ export function triggerConsent(phrase) {
     },
   };
   log('ORCHESTRATOR', 'INFO', '→ CONSENT', { phrase, hash });
+  
+  // B. LINK FINAL OFFER: Update application status and mark selected offer
+  // We deduce the user's accepted plan name from current terms matched against limits
+  let acceptedPlan = null;
+  if (state.negotiation.policyLimits?.alternatives) {
+    const match = state.negotiation.policyLimits.alternatives.find(alt => 
+      Math.abs(alt.amount - state.offer.amount) < 100 && 
+      alt.tenure === state.offer.tenure
+    );
+    acceptedPlan = match ? match.title || match.name : null;
+  }
+  
+  completeApplication('offer_accepted', acceptedPlan);
+  
   notify();
 
   setTimeout(() => {
@@ -508,6 +597,8 @@ export function addNegotiationRound({ type, message, amount, tenure, rate }) {
     rate: rate || state.offer.interestRate,
     timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
   };
+
+  saveTranscript(type === 'AI' ? 'agent' : 'user', message);
 
   const newCurrentRound = type === 'AI' ? roundNum : state.negotiation.currentRound;
 
@@ -601,7 +692,7 @@ export function retryAadhaarUpload() {
 async function _speakError(text) {
   try {
     const { synthesizeAndPlay } = await import('../tts/sarvamTTS.js');
-    await synthesizeAndPlay(text, {}); // empty object ensures destructuring doesn't crash
+    await synthesizeAndPlay(text, {}); // pass empty options so defaults apply
   } catch (err) {
     console.error('Failed to speak error:', err);
   }
