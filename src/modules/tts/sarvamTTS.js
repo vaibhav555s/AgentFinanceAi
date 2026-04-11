@@ -34,13 +34,14 @@ function getApiKey() {
  * @returns {Promise<void>} Resolves when audio finishes playing
  */
 export async function synthesizeAndPlay(text, options = {}) {
+    const opts = options || {};
     if (!text) return;
 
     const {
         languageCode = 'en-IN',
         speaker = 'suhani', // 'suhani', 'mohit', etc.
         model = 'bulbul:v3'
-    } = options;
+    } = opts;
 
     log('TTS', 'INFO', `Generating audio for: "${text.slice(0, 60)}..."`);
 
@@ -65,7 +66,7 @@ export async function synthesizeAndPlay(text, options = {}) {
         const audios = response.data?.audios;
         if (audios && audios.length > 0) {
             const base64Audio = audios[0];
-            
+
             // Convert base64 to Blob URL to prevent dataURI length issues
             const byteCharacters = atob(base64Audio);
             const byteNumbers = new Array(byteCharacters.length);

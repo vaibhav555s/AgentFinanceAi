@@ -18,8 +18,8 @@
 
 import { fetchBureau } from '../bureau/bureauClient.js';
 import { runPolicy } from '../policy/PolicyEngine.js';
-import { 
-  calculatePolicyOffer, 
+import {
+  calculatePolicyOffer,
   buildOpeningOfferScript,
   processNegotiation,
   calcEMI
@@ -601,7 +601,7 @@ export function retryAadhaarUpload() {
 async function _speakError(text) {
   try {
     const { synthesizeAndPlay } = await import('../tts/sarvamTTS.js');
-    await synthesizeAndPlay(text, null); // null agentVoice means use default TTS voice
+    await synthesizeAndPlay(text, {}); // empty object ensures destructuring doesn't crash
   } catch (err) {
     console.error('Failed to speak error:', err);
   }
