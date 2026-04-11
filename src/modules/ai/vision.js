@@ -35,7 +35,7 @@ export async function predictAgeFromFrame(base64Image) {
                     content: [
                         {
                             type: 'text',
-                            text: 'Analyze this image for two things: 1) Estimate the numeric age of the person. 2) Determine if this is a live person physically matching the camera, OR if it is a spoof (a static photo, screen displaying a face, deepfake, holding up a printed picture). Look extremely closely for rectangular borders of a phone screen, fingers holding a photo, moiré patterns from a digital screen, or paper glare/reflections. If there is ANY visual evidence that this is a photo of a photo or a screen in a screen, set isLivePerson to false. Respond EXACTLY in this JSON format: {"age": 25, "isLivePerson": true}. If no person is found, return {"age": 0, "isLivePerson": false}. Output ONLY valid JSON.'
+                            text: 'Analyze this image: 1) Estimate the numeric age of the person. 2) Determine if this is a live person physically standing in front of the camera. The DEFAULT state is true. You must ONLY set `isLivePerson: false` if you explicitly see a hand holding a glowing phone screen, or a hand holding a printed picture. If the image is just a person staring at a camera (even with webcam glare or a busy background), assume it is live and set to true. If NO human face is found in the image at all, return {"age": 0, "isLivePerson": false}. Respond EXACTLY in this JSON format: {"age": 25, "isLivePerson": true}. Output ONLY valid JSON.'
                         },
                         {
                             type: 'image_url',
@@ -69,14 +69,17 @@ export async function predictAgeFromFrame(base64Image) {
             log('VISION', 'WARN', 'Failed to parse JSON from Vision model');
         }
 
-        const age = Number(result.age) || 0;
-        const isLivePerson = Boolean(result.isLivePerson);
+        const ageNum = Number(result.age) || null;
+        let finalAge = null;
 
-        if (age > 0 && age < 120) {
-            return { age, isLivePerson, confidence: 0.85 };
+        if (ageNum !== null && ageNum > 0 && ageNum < 120) {
+            finalAge = ageNum;
         }
 
-        return { age: null, isLivePerson: false, confidence: 0 };
+        // isLivePerson is handled independently of whether the model successfully guessed an age string
+        const isLivePerson = Boolean(result.isLivePerson);
+
+        return { age: finalAge, isLivePerson, confidence: finalAge ? 0.85 : 0.5 };
     } catch (error) {
         const detail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
         log('VISION', 'ERROR', `Groq Vision API error: ${detail}`);
