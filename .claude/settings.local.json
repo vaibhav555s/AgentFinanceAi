@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/lucide-react/package.json'\\); console.log\\(pkg.version\\);\")",
+      "Bash(node -e \"const l = require\\('./node_modules/lucide-react/dist/cjs/lucide-react.js'\\); const check = ['SlidersHorizontal','ScanFace','CheckCircle2','LayoutDashboard','Radio','MessageSquare','Sliders'].filter\\(k=>l[k]\\); console.log\\('Found:', check\\); const missing = ['SlidersHorizontal','ScanFace','CheckCircle2','LayoutDashboard','Radio','MessageSquare','Sliders'].filter\\(k=>!l[k]\\); console.log\\('Missing:', missing\\);\")",
+      "Bash(curl -s http://localhost:5173/session/demo-token-123)",
+      "Bash(curl -s http://localhost:5173/ops)",
+      "Bash(curl -s http://localhost:5173/compliance)"
+    ]
+  }
+}
