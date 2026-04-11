@@ -13,6 +13,7 @@ import {
   subscribeOrchestrator,
   getOrchestratorState,
   triggerAadhaarVerify,
+  retryAadhaarUpload,
   updateOffer,
   triggerConsent,
   PHASES,
@@ -45,11 +46,11 @@ const C = {
 
 /* ─── Progress Steps ──────────────────────────────────── */
 const STEPS = [
-  { phase: PHASES.CHAT,           icon: Fingerprint,  label: 'IDENTIFY' },
-  { phase: PHASES.AADHAAR_UPLOAD, icon: Upload,        label: 'VERIFY' },
-  { phase: PHASES.FACE_SCAN,      icon: ScanFace,      label: 'BIOMETRIC' },
-  { phase: PHASES.OFFER,          icon: Banknote,      label: 'OFFER' },
-  { phase: PHASES.CONSENT,        icon: ShieldCheck,   label: 'CONSENT' },
+  { phase: PHASES.CHAT, icon: Fingerprint, label: 'IDENTIFY' },
+  { phase: PHASES.AADHAAR_UPLOAD, icon: Upload, label: 'VERIFY' },
+  { phase: PHASES.FACE_SCAN, icon: ScanFace, label: 'BIOMETRIC' },
+  { phase: PHASES.OFFER, icon: Banknote, label: 'OFFER' },
+  { phase: PHASES.CONSENT, icon: ShieldCheck, label: 'CONSENT' },
 ];
 
 function phaseToStep(phase) {
@@ -389,17 +390,22 @@ function PanelChat({ kycFields }) {
   );
 }
 
-/* ─── Phase: AADHAAR_UPLOAD ───────────────────────────── */
-function PanelAadhaarUpload() {
+/* ─── Phase: AADHAAR_UPLOAD ────────────────────── */
+function PanelAadhaarUpload({ aadhaar }) {
   const inputRef = useRef(null);
   const [file, setFile] = useState(null);
+  const hasError = aadhaar?.status === 'failed';
 
   function handleFile(f) {
     if (!f) return;
     setFile(f);
-    // Small delay so user sees the file name, then trigger verify
     setTimeout(() => triggerAadhaarVerify(f), 800);
   }
+
+  // Reset file picker when aadhaar error changes (allow re-upload)
+  useEffect(() => {
+    if (hasError) setFile(null);
+  }, [hasError]);
 
   return (
     <div className="p-5 flex flex-col gap-5">
@@ -410,6 +416,22 @@ function PanelAadhaarUpload() {
         </p>
       </motion.div>
 
+      {/* Error banner */}
+      {hasError && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', display: 'flex', gap: 10, alignItems: 'flex-start' }}
+        >
+          <AlertTriangle size={14} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 3 }}>Document Verification Failed</p>
+            <p style={{ fontSize: 11, color: '#FCA5A5', lineHeight: 1.6 }}>
+              {aadhaar.error || 'Could not read the Aadhaar document. Please upload a clear image with a visible QR code.'}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -419,8 +441,8 @@ function PanelAadhaarUpload() {
         onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
         style={{
           borderRadius: 14,
-          border: file ? `1px solid ${C.green}` : `2px dashed rgba(59,130,246,0.35)`,
-          background: file ? 'rgba(16,185,129,0.06)' : 'rgba(59,130,246,0.04)',
+          border: file ? `1px solid ${C.green}` : hasError ? `2px dashed rgba(239,68,68,0.4)` : `2px dashed rgba(59,130,246,0.35)`,
+          background: file ? 'rgba(16,185,129,0.06)' : hasError ? 'rgba(239,68,68,0.03)' : 'rgba(59,130,246,0.04)',
           padding: '32px 20px',
           cursor: file ? 'default' : 'pointer',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
@@ -440,10 +462,10 @@ function PanelAadhaarUpload() {
         ) : (
           <>
             <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}>
-              <Upload size={36} style={{ color: C.blue, opacity: 0.7 }} />
+              <Upload size={36} style={{ color: hasError ? C.red : C.blue, opacity: 0.7 }} />
             </motion.div>
             <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Tap to upload Aadhaar</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{hasError ? 'Try uploading again' : 'Tap to upload Aadhaar'}</p>
               <p style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>or drag and drop here • JPG, PNG, PDF</p>
             </div>
           </>
@@ -500,16 +522,17 @@ function PanelAadhaarVerify() {
 }
 
 /* ─── Phase: AADHAAR_DONE ─────────────────────────────── */
-function PanelAadhaarDone({ aadhaar }) {
+function PanelAadhaarDone({ aadhaar, kycMismatch }) {
   const fields = [
-    { label: 'NAME', value: aadhaar.name },
-    { label: 'DATE OF BIRTH', value: aadhaar.dob },
-    { label: 'AGE', value: `${aadhaar.age} years` },
-    { label: 'AADHAAR NUMBER', value: aadhaar.aadhaarNumber },
+    { label: 'NAME', value: aadhaar.name, mismatch: kycMismatch?.nameMismatch },
+    { label: 'DATE OF BIRTH', value: aadhaar.dob, mismatch: false },
+    { label: 'AGE', value: aadhaar.age ? `${aadhaar.age} years` : 'N/A', mismatch: kycMismatch?.ageMismatch },
+    { label: 'AADHAAR NUMBER', value: aadhaar.aadhaarNumber, mismatch: false },
   ];
 
   return (
     <div className="p-5 flex flex-col gap-4">
+      {/* Verified badge */}
       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.6 }}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: `1px solid rgba(16,185,129,0.25)` }}>
         <CheckCircle2 size={24} style={{ color: C.green, flexShrink: 0 }} />
@@ -519,20 +542,62 @@ function PanelAadhaarDone({ aadhaar }) {
         </div>
       </motion.div>
 
+      {/* KYC Mismatch Warning */}
+      {kycMismatch?.flagged && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', display: 'flex', flexDirection: 'column', gap: 8 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={14} style={{ color: C.red, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.red }}>KYC Mismatch Detected</span>
+          </div>
+          <p style={{ fontSize: 11, color: '#FCA5A5', lineHeight: 1.6 }}>
+            The details provided verbally do not match the Aadhaar document.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {kycMismatch.nameMismatch && (
+              <div style={{ fontSize: 11, color: C.textSub }}>
+                <span style={{ color: C.red }}>Name:</span> Stated “{kycMismatch.statedName}” ≠ Aadhaar “{kycMismatch.aadhaarName}”
+              </div>
+            )}
+            {kycMismatch.ageMismatch && (
+              <div style={{ fontSize: 11, color: C.textSub }}>
+                <span style={{ color: C.red }}>Age:</span> Stated {kycMismatch.statedAge}y ≠ Aadhaar {kycMismatch.aadhaarAge}y
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Extracted fields */}
       <div className="flex flex-col gap-2">
         {fields.map((f, i) => (
           <motion.div key={f.label} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 + i * 0.1 }}
-            style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block' }}>{f.label}</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 2, display: 'block' }}>{f.value}</span>
+            style={{ padding: '10px 14px', borderRadius: 10, background: f.mismatch ? 'rgba(239,68,68,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${f.mismatch ? 'rgba(239,68,68,0.3)' : C.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: 10, color: f.mismatch ? '#FCA5A5' : C.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block' }}>{f.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 2, display: 'block' }}>{f.value}</span>
+              </div>
+              {f.mismatch && <AlertTriangle size={14} style={{ color: C.red, flexShrink: 0 }} />}
+            </div>
           </motion.div>
         ))}
       </div>
 
-      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-        style={{ fontSize: 11, color: C.textSub, fontStyle: 'italic', textAlign: 'center' }}>
-        Starting biometric age verification...
-      </motion.p>
+      {kycMismatch?.flagged ? (
+        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+          onClick={retryAadhaarUpload}
+          style={{ marginTop: 10, padding: '12px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', color: C.red, border: `1px solid rgba(239,68,68,0.4)`, fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', transition: 'all 0.2s' }}>
+          <RefreshCw size={14} /> Upload Correct Document
+        </motion.button>
+      ) : (
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+          style={{ fontSize: 11, color: C.textSub, fontStyle: 'italic', textAlign: 'center' }}>
+          Starting biometric age verification...
+        </motion.p>
+      )}
     </div>
   );
 }
@@ -806,7 +871,7 @@ function PanelComplete({ offer, token }) {
    RIGHT PANEL (ORCHESTRATED)
 ══════════════════════════════════════════════════════════ */
 function RightPanel({ orchState, kycFields, token }) {
-  const { phase, aadhaar, faceAge, bureau, offer, consent } = orchState;
+  const { phase, aadhaar, kycMismatch, faceAge, bureau, offer, consent } = orchState;
   const currentStep = phaseToStep(phase);
 
   function renderContent() {
@@ -814,11 +879,11 @@ function RightPanel({ orchState, kycFields, token }) {
       case PHASES.CHAT:
         return <PanelChat kycFields={kycFields} />;
       case PHASES.AADHAAR_UPLOAD:
-        return <PanelAadhaarUpload />;
+        return <PanelAadhaarUpload aadhaar={aadhaar} />;
       case PHASES.AADHAAR_VERIFY:
         return <PanelAadhaarVerify />;
       case PHASES.AADHAAR_DONE:
-        return <PanelAadhaarDone aadhaar={aadhaar} />;
+        return <PanelAadhaarDone aadhaar={aadhaar} kycMismatch={kycMismatch} />;
       case PHASES.FACE_SCAN:
         return <PanelFaceScan faceAge={faceAge} phase={phase} />;
       case PHASES.FACE_DONE:
@@ -927,7 +992,7 @@ export default function VideoCallPage() {
           startRecording={startRecording} stopRecording={stopRecording}
           phase={orchState.phase}
           leftOverlay={orchState.leftOverlay}
-          onJoined={() => {}}
+          onJoined={() => { }}
         />
         <RightPanel
           orchState={orchState}
@@ -945,7 +1010,7 @@ export default function VideoCallPage() {
             startRecording={startRecording} stopRecording={stopRecording}
             phase={orchState.phase}
             leftOverlay={orchState.leftOverlay}
-            onJoined={() => {}}
+            onJoined={() => { }}
           />
         </div>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

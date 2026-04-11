@@ -100,9 +100,25 @@ function detectPurpose(text) {
 /* ─── Name Extraction ────────────────────────────────── */
 
 const NAME_PATTERNS = [
-  /(?:my name is|i am|i'm|this is|mera naam|naam)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i,
-  /(?:call me|you can call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+  // Standard: "my name is Om Singh", "I am Om", "I'm Om"
+  /(?:my name is|mera naam|naam hai|naam)\s+([A-Za-z][a-z]+(?:\s+[A-Za-z][a-z]+){0,2})/i,
+  // Indian colloquial: "myself Om Singh"
+  /\bmyself\s+([A-Za-z][a-z]+(?:\s+[A-Za-z][a-z]+){0,2})/i,
+  // Direct: "I am Om", "I'm Om" — standalone
+  /^(?:i am|i'm)\s+([A-Za-z][a-z]+(?:\s+[A-Za-z][a-z]+){0,2})/i,
+  // After filler: "yeah I am Om", "so I'm Om Singh", "hello I'm Om"
+  /(?:yeah|yes|so|well|hi|hello|okay)[,\s]+(?:i am|i'm|myself|name is|it's)\s+([A-Za-z][a-z]+(?:\s+[A-Za-z][a-z]+){0,2})/i,
+  // Possessive: "call me Om", "you can call me Om"
+  /(?:call me|you can call me)\s+([A-Za-z][a-z]+(?:\s+[A-Za-z][a-z]+)?)/i,
 ];
+
+/**
+ * Title-case a name string (handles all-lowercase STT output)
+ * @param {string} name
+ */
+function titleCase(name) {
+  return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
 
 /**
  * Extract name from text.
@@ -111,15 +127,15 @@ const NAME_PATTERNS = [
  */
 function extractName(text) {
   let best = { name: null, confidence: 0 };
+  const falsePositives = ['here', 'calling', 'interested', 'looking', 'earning', 'working', 'yes', 'no', 'okay', 'fine', 'good', 'great', 'sure', 'this', 'that', 'just', 'very'];
   for (const pattern of NAME_PATTERNS) {
     const regex = new RegExp(pattern, 'gi');
     let m;
     while ((m = regex.exec(text)) !== null) {
       if (m[1]) {
-        const name = m[1].trim();
+        const name = titleCase(m[1].trim());
         const firstWord = name.toLowerCase().split(/\s+/)[0];
-        const falseNames = ['here', 'calling', 'interested', 'looking', 'earning', 'working'];
-        if (!falseNames.includes(firstWord)) {
+        if (!falsePositives.includes(firstWord) && name.length > 1) {
           best = { name, confidence: 0.85 };
         }
       }
@@ -269,10 +285,10 @@ export function extractFinancialData(text, lastAgentQuestion = '') {
   const now = new Date().toISOString();
   const snippet = text.slice(0, 80);
 
-  const nameResult      = extractName(text);
-  const incomeResult    = extractIncome(text);
-  const loanResult      = extractLoanAmount(text);
-  const purposeResult   = detectPurpose(text);
+  const nameResult = extractName(text);
+  const incomeResult = extractIncome(text);
+  const loanResult = extractLoanAmount(text);
+  const purposeResult = detectPurpose(text);
   const employmentResult = detectEmployment(text);
 
   // ── Context override ──────────────────────────────────
@@ -299,11 +315,11 @@ export function extractFinancialData(text, lastAgentQuestion = '') {
   }
 
   const result = {
-    name:       { value: nameResult.name,             confidence: nameResult.confidence,       source: snippet, updatedAt: now },
-    income:     { value: finalIncome.income,           confidence: finalIncome.confidence,      source: snippet, updatedAt: now },
-    loanAmount: { value: finalLoanAmount.loanAmount,   confidence: finalLoanAmount.confidence,  source: snippet, updatedAt: now },
-    purpose:    { value: purposeResult.purpose,        confidence: purposeResult.confidence,    source: snippet, updatedAt: now },
-    employment: { value: employmentResult.employment,  confidence: employmentResult.confidence, source: snippet, updatedAt: now },
+    name: { value: nameResult.name, confidence: nameResult.confidence, source: snippet, updatedAt: now },
+    income: { value: finalIncome.income, confidence: finalIncome.confidence, source: snippet, updatedAt: now },
+    loanAmount: { value: finalLoanAmount.loanAmount, confidence: finalLoanAmount.confidence, source: snippet, updatedAt: now },
+    purpose: { value: purposeResult.purpose, confidence: purposeResult.confidence, source: snippet, updatedAt: now },
+    employment: { value: employmentResult.employment, confidence: employmentResult.confidence, source: snippet, updatedAt: now },
   };
 
   log('EXTRACTION', 'INFO', 'Extracted financial data', {
@@ -346,8 +362,8 @@ export function mergeExtractedData(previous, incoming) {
     const prev = previous[field];
     const next = incoming[field];
 
-    // Skip if extraction found nothing
-    if (next.value === null || next.value === undefined) continue;
+    // Skip if incoming field is missing entirely (e.g. 'age' is set only by vision, not text extraction)
+    if (!next || next.value === null || next.value === undefined) continue;
 
     // Field is empty — always accept
     if (prev.value === null) {
