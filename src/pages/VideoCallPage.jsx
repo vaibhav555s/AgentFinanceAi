@@ -173,7 +173,7 @@ function ConfBadge({ level }) {
 }
 
 /* ─── Camera Frame ──────────────────────────────────── */
-function CameraFrame({ isVideoOn, onCameraReady }) {
+function CameraFrame({ isVideoOn, onCameraReady, phase }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -241,6 +241,31 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideoOn]);
+
+  const hasScanned = useRef(false);
+  useEffect(() => {
+    if (phase !== PHASES.FACE_SCAN) {
+      hasScanned.current = false;
+    }
+
+    if (phase === PHASES.FACE_SCAN && isVideoOn && videoRef.current && canvasRef.current && !hasScanned.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        hasScanned.current = true;
+        // Wait 800ms for the user to settle into the frame
+        const timeout = setTimeout(() => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const frameData = canvas.toDataURL('image/jpeg', 0.8);
+          processVideoFrame(frameData).catch(console.error);
+        }, 800);
+        return () => clearTimeout(timeout);
+      }
+    }
+  }, [phase, isVideoOn]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1, background: '#0D0D14' }}>
@@ -333,9 +358,9 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRe
 
   return (
     <div className="relative flex flex-col" style={{ flex: '0 0 62%', background: 'radial-gradient(ellipse at 50% 40%, #0F1628 0%, #0A0A14 60%, #060610 100%)', borderRight: `1px solid ${C.border}`, overflow: 'hidden' }}>
-      {/* Camera â€” pointer-events none so it never blocks button clicks */}
+      {/* Camera — pointer-events none so it never blocks button clicks */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
-        <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} />
+        <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} phase={phase} />
       </div>
 
       {/* Face scan overlay â€” only captures events when actively shown */}
@@ -936,21 +961,21 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
           {policyLimits.alternatives.map((alt) => {
             const isSelected = offer.amount === alt.amount && offer.tenure === alt.tenure;
             return (
-               <motion.div key={alt.id}
-                 onClick={() => onUpdateOffer?.(alt.amount, alt.tenure)}
-                 whileHover={{ scale: 1.02 }}
-                 whileTap={{ scale: 0.98 }}
-                 style={{ 
-                   flex: '0 0 auto', width: '100px', cursor: 'pointer',
-                   padding: '12px 10px', borderRadius: 12,
-                   background: isSelected ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.02)',
-                   border: `1px solid ${isSelected ? C.blue : C.border}` 
-                 }}>
-                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>{renderIcon(alt.icon)}</div>
-                 <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? C.blue : C.text, textAlign: 'center', marginBottom: 4 }}>{alt.title}</div>
-                 <div style={{ fontSize: 12, fontWeight: 800, color: C.text, textAlign: 'center' }}>{fmtINR(alt.amount)}</div>
-                 <div style={{ fontSize: 8, color: C.textMuted, textAlign: 'center', marginTop: 2 }}>{alt.tenure} mo @ {alt.interestRate}%</div>
-               </motion.div>
+              <motion.div key={alt.id}
+                onClick={() => onUpdateOffer?.(alt.amount, alt.tenure)}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                style={{
+                  flex: '0 0 auto', width: '100px', cursor: 'pointer',
+                  padding: '12px 10px', borderRadius: 12,
+                  background: isSelected ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${isSelected ? C.blue : C.border}`
+                }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>{renderIcon(alt.icon)}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? C.blue : C.text, textAlign: 'center', marginBottom: 4 }}>{alt.title}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: C.text, textAlign: 'center' }}>{fmtINR(alt.amount)}</div>
+                <div style={{ fontSize: 8, color: C.textMuted, textAlign: 'center', marginTop: 2 }}>{alt.tenure} mo @ {alt.interestRate}%</div>
+              </motion.div>
             );
           })}
         </motion.div>

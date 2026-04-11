@@ -18,8 +18,8 @@
 
 import { fetchBureau } from '../bureau/bureauClient.js';
 import { runPolicy } from '../policy/PolicyEngine.js';
-import { 
-  calculatePolicyOffer, 
+import {
+  calculatePolicyOffer,
   buildOpeningOfferScript,
   processNegotiation,
   calcEMI
