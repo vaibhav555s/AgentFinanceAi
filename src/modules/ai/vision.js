@@ -8,6 +8,9 @@ import { log } from '../utils/logger.js';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+// Rate-limit cooldown: skip vision calls for 60s after a 429
+let rateLimitCooldownUntil = 0;
+
 /**
  * Predict user age and liveness from a base64 image frame using Groq Llama 4.
  * 
@@ -15,6 +18,12 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
  * @returns {Promise<{ age: number|null, isLivePerson: boolean|null, confidence: number }>}
  */
 export async function predictAgeFromFrame(base64Image) {
+    // If we're in a cooldown period after a 429, skip this call entirely
+    if (Date.now() < rateLimitCooldownUntil) {
+        log('VISION', 'INFO', `Skipping vision call — rate-limit cooldown (${Math.ceil((rateLimitCooldownUntil - Date.now()) / 1000)}s remaining)`);
+        return { age: null, isLivePerson: null, confidence: 0 };
+    }
+
     log('VISION', 'INFO', 'Analyzing frame with Groq Llama 4 Scout...');
 
     const apiKey = import.meta.env.VITE_GROQ_API_KEY || import.meta.env.GROQ_API_KEY;
@@ -76,11 +85,38 @@ export async function predictAgeFromFrame(base64Image) {
             return { age, isLivePerson, confidence: 0.85 };
         }
 
-        return { age: null, isLivePerson: false, confidence: 0 };
+        return { age: null, isLivePerson: null, confidence: 0 };
     } catch (error) {
-        const detail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+        const status = error.response?.status;
+        const errData = error.response?.data;
+        const detail = errData ? JSON.stringify(errData) : error.message;
         log('VISION', 'ERROR', `Groq Vision API error: ${detail}`);
-        return { age: null, isLivePerson: false, confidence: 0 };
+
+        if (status === 429) {
+            const errMsg = errData?.error?.message || '';
+
+            // Daily quota exhausted — enter a 6-hour cooldown, no point retrying today
+            if (errMsg.includes('tokens per day') || errMsg.includes('TPD')) {
+                rateLimitCooldownUntil = Date.now() + 6 * 60 * 60 * 1000;
+                log('VISION', 'WARN', 'Daily token limit hit — entering 6-hour cooldown');
+            } else {
+                // Parse "Please try again in Xm Ys" or "Xs" from the error message
+                let cooldownMs = 60000; // default 60s
+                const minSecMatch = errMsg.match(/(\d+)m(\d+(?:\.\d+)?)s/);
+                const secMatch = errMsg.match(/(\d+(?:\.\d+)?)s/);
+                if (minSecMatch) {
+                    cooldownMs = (parseInt(minSecMatch[1]) * 60 + parseFloat(minSecMatch[2])) * 1000;
+                } else if (secMatch) {
+                    cooldownMs = parseFloat(secMatch[1]) * 1000;
+                }
+                // Cap at 10 minutes to avoid indefinite silence
+                cooldownMs = Math.min(cooldownMs + 5000, 10 * 60 * 1000);
+                rateLimitCooldownUntil = Date.now() + cooldownMs;
+                log('VISION', 'WARN', `Rate limited — cooldown ${Math.ceil(cooldownMs / 1000)}s`);
+            }
+        }
+
+        return { age: null, isLivePerson: null, confidence: 0 };
     }
 }
 

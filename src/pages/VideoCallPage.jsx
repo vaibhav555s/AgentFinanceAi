@@ -29,7 +29,13 @@ function calcEMI(principal, annualRate, months) {
   return Math.round(principal * r * Math.pow(1 + r, months) / (Math.pow(1 + r, months) - 1));
 }
 function fmtINR(n) {
-  return '₹' + Number(n).toLocaleString('en-IN');
+  if (n == null || n === '') return '₹0';
+  let num = Number(n);
+  if (isNaN(num) && typeof n === 'string') {
+    num = Number(n.replace(/[^0-9.-]/g, ''));
+  }
+  if (isNaN(num)) num = 0;
+  return '₹' + num.toLocaleString('en-IN');
 }
 
 /* ─── Animated Number Component ─────────────────────── */
@@ -172,9 +178,18 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
 
+  const intervalRef = useRef(null);
+
   useEffect(() => {
     let active = null;
-    let frameInterval = null;
+
+    // Helper: clear any running interval
+    const clearFrameInterval = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
 
     if (isVideoOn) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
@@ -184,32 +199,45 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
           if (videoRef.current) videoRef.current.srcObject = s;
           onCameraReady?.();
 
-          // Start extracting frames every 8 seconds
-          frameInterval = setInterval(() => {
+          // Clear any stale interval before starting a new one (guards Strict Mode)
+          clearFrameInterval();
+
+          let visionBusy = false;
+          intervalRef.current = setInterval(async () => {
+            if (visionBusy) return;
             if (videoRef.current && canvasRef.current) {
               const video = videoRef.current;
               const canvas = canvasRef.current;
               if (video.videoWidth > 0 && video.videoHeight > 0) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+                const scale = Math.min(1, 400 / video.videoWidth);
+                canvas.width = video.videoWidth * scale;
+                canvas.height = video.videoHeight * scale;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const frameData = canvas.toDataURL('image/jpeg', 0.8);
-                processVideoFrame(frameData).catch(console.error);
+                const frameData = canvas.toDataURL('image/jpeg', 0.6);
+                visionBusy = true;
+                try {
+                  await processVideoFrame(frameData);
+                } catch (e) {
+                  console.error(e);
+                } finally {
+                  visionBusy = false;
+                }
               }
             }
-          }, 8000);
+          }, 15000);
         })
         .catch(() => onCameraReady?.());
     } else {
       stream?.getTracks().forEach(t => t.stop());
       setStream(null);
-      if (frameInterval) clearInterval(frameInterval);
+      clearFrameInterval();
       onCameraReady?.();
     }
+
     return () => {
       active?.getTracks().forEach(t => t.stop());
-      if (frameInterval) clearInterval(frameInterval);
+      clearFrameInterval();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideoOn]);
@@ -901,8 +929,8 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
         </div>
       </motion.div>
 
-      {/* 3 Offer Options from Policy Engine before Negotiation starts */}
-      {currentRound === 0 && policyLimits?.alternatives && (
+      {/* 3 Offer Options from Policy Engine */}
+      {policyLimits?.alternatives && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, margin: '4px 0' }}>
           {policyLimits.alternatives.map((alt) => {

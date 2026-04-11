@@ -39,8 +39,8 @@ export async function generateResponse(transcript, extractedData) {
     const allBasicInfoDone = hasName && hasIncome && hasPurpose && hasAmount && hasEmployment;
 
     if (allBasicInfoDone && currentPhase === 'CHAT') {
-        // Trigger transition to Aadhaar upload
-        triggerAadhaarUpload();
+        // Trigger transition to Aadhaar upload — await so DB application ID is initialized
+        await triggerAadhaarUpload();
     }
 
     // Build a clear picture of what's confirmed vs missing for the LLM
