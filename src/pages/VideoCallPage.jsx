@@ -5,9 +5,34 @@ import {
   Mic, MicOff, Video, VideoOff, Lock, User, Shield, Tag,
   CheckCircle, Star, FileText, Upload, Eye, SlidersHorizontal,
   Download, ChevronLeft, ChevronRight, ScanFace, CheckCircle2,
-  ShieldCheck, Zap, Activity, Fingerprint, Banknote, FileCheck,
-  Radar, Cpu, ArrowRight
+  ShieldCheck, Zap,
 } from 'lucide-react';
+
+/* ─── Constants ──────────────────────────────────────── */
+const CAPTIONS = [
+  'Tell me about your monthly income...',
+  'Can you share your employment details?',
+  'What would you use this loan for?',
+  'Let me verify your details...',
+  'Great, processing your application...',
+];
+
+const STEPS = [
+  { icon: User, label: 'KYC' },
+  { icon: Shield, label: 'Verify' },
+  { icon: Tag, label: 'Offer' },
+  { icon: CheckCircle, label: 'Consent' },
+  { icon: Star, label: 'Done' },
+];
+
+const KYC_FIELDS = [
+  { label: 'Full Name', value: 'Rahul Sharma', confidence: 'High' },
+  { label: 'Age', value: '32', confidence: 'High' },
+  { label: 'Employment Type', value: 'Salaried — Private Sector', confidence: 'High' },
+  { label: 'Monthly Income', value: '₹85,000', confidence: 'Medium' },
+  { label: 'Loan Purpose', value: 'Home Renovation', confidence: 'High' },
+  { label: 'Requested Amount', value: '₹3,00,000', confidence: 'High' },
+];
 
 /* ─── Helpers ────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -44,10 +69,10 @@ const colors = {
 
 const STEPS = [
   { icon: Fingerprint, label: 'IDENTIFY' },
-  { icon: ScanFace,    label: 'VERIFY' },
-  { icon: Banknote,    label: 'STRUCTURE' },
+  { icon: ScanFace, label: 'VERIFY' },
+  { icon: Banknote, label: 'STRUCTURE' },
   { icon: ShieldCheck, label: 'CONSENT' },
-  { icon: CheckCircle2,label: 'DONE' },
+  { icon: CheckCircle2, label: 'DONE' },
 ];
 
 /* ─── Typewriter ─────────────────────────────────────── */
@@ -102,23 +127,28 @@ function FluidVoiceVisualizer() {
     <div className="flex items-center gap-[4px] h-10">
       {bars.map((_, i) => (
         <motion.div
-           key={i}
-           animate={{ height: [`${20 + Math.random()*30}%`, `${60 + Math.random()*40}%`, `${20 + Math.random()*30}%`] }}
-           transition={{ duration: 0.6 + Math.random()*0.5, repeat: Infinity, ease: 'easeInOut' }}
-           style={{ width: 3, borderRadius: 999, backgroundColor: colors.accent, opacity: 0.8 }}
+          key={i}
+          animate={{ height: [`${20 + Math.random() * 30}%`, `${60 + Math.random() * 40}%`, `${20 + Math.random() * 30}%`] }}
+          transition={{ duration: 0.6 + Math.random() * 0.5, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ width: 3, borderRadius: 999, backgroundColor: colors.accent, opacity: 0.8 }}
         />
       ))}
     </div>
   );
 }
 
-/* ─── Premium AI Orb ─────────────────────────────────── */
-function PremiumOrb() {
+/* ─── Confidence Badge ───────────────────────────────── */
+function ConfBadge({ level }) {
+  const cfg = {
+    High: { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    Medium: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
+    Low: { color: '#EF4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
+  }[level];
   return (
     <div className="relative flex items-center justify-center w-[320px] h-[320px]">
       {/* Outer ambient glow */}
       <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.15) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-      
+
       {/* Expanding ripples */}
       <motion.div
         animate={{ scale: [1, 1.4, 1], opacity: [0, 0.15, 0] }}
@@ -136,7 +166,7 @@ function PremiumOrb() {
       {/* Central Core */}
       <motion.div
         animate={{ rotate: 360, scale: [1, 1.05, 1] }}
-        transition={{ 
+        transition={{
           rotate: { duration: 30, repeat: Infinity, ease: 'linear' },
           scale: { duration: 4, repeat: Infinity, ease: 'easeInOut' }
         }}
@@ -155,38 +185,48 @@ function PremiumOrb() {
   );
 }
 
-/* ─── Stage 1: Identity Extraction (KYC) ───────────────── */
+/* ─── Stage 1 — KYC ──────────────────────────────────── */
 function Stage1KYC() {
   const [visible, setVisible] = useState(0);
   const KYC_FIELDS = [
-    { label: 'PRIMARY APPLICANT',  value: 'Rahul Sharma',             conf: '99.8%' },
-    { label: 'DATE OF BIRTH',      value: '14 Aug 1991 (Age 32)',     conf: '98.5%' },
-    { label: 'EMPLOYMENT STATUS',  value: 'Salaried Executive',       conf: '99.1%' },
-    { label: 'VERIFIED INCOME',    value: '₹85,000 / mo',             conf: '94.2%' },
-    { label: 'PURPOSE OF LOAN',    value: 'Capital Expenditure',      conf: '97.0%' },
-    { label: 'REQUESTED CAPITAL',  value: '₹3,00,000',                conf: '99.9%' },
+    { label: 'PRIMARY APPLICANT', value: 'Rahul Sharma', conf: '99.8%' },
+    { label: 'DATE OF BIRTH', value: '14 Aug 1991 (Age 32)', conf: '98.5%' },
+    { label: 'EMPLOYMENT STATUS', value: 'Salaried Executive', conf: '99.1%' },
+    { label: 'VERIFIED INCOME', value: '₹85,000 / mo', conf: '94.2%' },
+    { label: 'PURPOSE OF LOAN', value: 'Capital Expenditure', conf: '97.0%' },
+    { label: 'REQUESTED CAPITAL', value: '₹3,00,000', conf: '99.9%' },
   ];
 
   useEffect(() => {
     if (visible < KYC_FIELDS.length) {
-      const t = setTimeout(() => setVisible(v => v + 1), 350);
+      const t = setTimeout(() => setVisible(v => v + 1), 420);
       return () => clearTimeout(t);
     }
-  }, [visible]);
+  }, [visible, kycFields.length]);
+
+  // Re-trigger animation when new fields arrive with values
+  const filledCount = kycFields.filter(f => f.value !== '—').length;
+  useEffect(() => {
+    if (filledCount > 0 && visible < filledCount) {
+      setVisible(filledCount);
+    }
+  }, [filledCount]);
 
   return (
-    <div className="p-6 flex flex-col gap-6" style={typography}>
-      <div className="flex items-center gap-3 pb-4 border-b" style={{ borderColor: colors.border }}>
-        <Radar size={18} style={{ color: colors.accent }} />
-        <div>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-            Identity Extraction
-          </h3>
-          <p style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>Secure data pipeline active</p>
-        </div>
+    <div className="p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2 mb-1">
+        <h3 className="text-sm font-semibold" style={{ fontFamily: 'Sora, sans-serif', color: 'var(--text-primary)' }}>
+          Extracting Profile
+        </h3>
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6' }}
+        />
       </div>
+      <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>AI is analyzing your responses...</p>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {KYC_FIELDS.map((f, i) => (
           <AnimatePresence key={f.label}>
             {i < visible && (
@@ -195,25 +235,32 @@ function Stage1KYC() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                 className="flex items-center justify-between p-3.5 transition-colors duration-200"
-                style={{ 
-                  borderRadius: 10, 
+                style={{
+                  borderRadius: 10,
                   background: 'rgba(255,255,255,0.02)',
                   border: `1px solid ${colors.border}`
                 }}
               >
-                <div className="flex flex-col gap-1.5">
-                  <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600 }}>{f.label}</span>
-                  <span style={{ fontSize: 14, color: colors.textPrimary, fontWeight: 500, letterSpacing: '-0.01em' }}>{f.value}</span>
+                <div className="flex flex-col min-w-0">
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{f.label}</span>
+                  <span className="font-semibold truncate" style={{ fontSize: 13, color: 'var(--text-primary)', marginTop: 1 }}>{f.value}</span>
                 </div>
-                <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderRadius: 4, background: 'rgba(52, 211, 153, 0.1)' }}>
-                  <CheckCircle2 size={10} style={{ color: colors.success }} />
-                  <span style={{ fontSize: 10, color: colors.success, fontWeight: 600, letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums' }}>{f.conf}</span>
-                </div>
+                <ConfBadge level={f.confidence} />
               </motion.div>
             )}
           </AnimatePresence>
         ))}
       </div>
+
+      {visible >= KYC_FIELDS.length && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 4 }}
+        >
+          Low confidence fields will be re-confirmed
+        </motion.p>
+      )}
     </div>
   );
 }
@@ -273,9 +320,9 @@ function Stage2Verify() {
             Mandatory Documents
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <UploadZone label="PAN CARD" file={panFile} onFile={setPanFile} />
-          <UploadZone label="AADHAAR" file={aadhaarFile} onFile={setAadhaarFile} />
+        <div className="grid grid-cols-2 gap-2">
+          <UploadZone label="PAN Card" file={panFile} onFile={setPanFile} />
+          <UploadZone label="Aadhaar Card" file={aadhaarFile} onFile={setAadhaarFile} />
         </div>
       </div>
 
@@ -354,7 +401,7 @@ function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept })
         }}
       >
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#38BDF8] opacity-10 blur-[50px] rounded-full pointer-events-none" />
-        
+
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-5" style={{ borderRadius: 6, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
           <Zap size={10} style={{ color: colors.accent }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: colors.accent, letterSpacing: '0.1em' }}>OPTIMIZED STRUCTURE</span>
@@ -433,16 +480,16 @@ function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept })
   );
 }
 
-/* ─── Stage 4: Cryptographic Consent ─────────────────── */
+/* ─── Stage 4 — Consent ──────────────────────────────── */
 function Stage4Consent({ token }) {
   const hash = 'a3f9bc2e847d1c6f4b8e2d9a7c3f1b5e9d2c8a4f7b1e6c3d9a5f2b8e4d7c1a3f';
-  const timestamp = formatTime();
+  const timestamp = '14:32:08';
 
   function downloadConsent() {
     const blob = new Blob([
-      `SECURE CONSENT TRAIL — AGENT FINANCE\n\nSession Token: ${token}\nTimestamp: ${timestamp}\n\n` +
-      `Parsed Vocal Intent: "Yes, I agree to the terms and conditions of this loan offer."\n\n` +
-      `Cryptographic Hash (SHA-256): ${hash}\n\nStrict Tamper-Evident Record. DO NOT MODIFY.`
+      `CONSENT TRAIL — AgentFinance AI\n\nSession: ${token}\nTimestamp: ${timestamp}\n\n` +
+      `Consent Phrase: "Yes, I agree to the terms and conditions of this loan offer"\n\n` +
+      `SHA-256 Hash: ${hash}\n\nTamper-evident record. Do not modify.`
     ], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -460,33 +507,71 @@ function Stage4Consent({ token }) {
       </div>
 
       {/* Detected phrase */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-5" style={{ borderRadius: 12, background: 'rgba(255,255,255,0.02)', borderLeft: `3px solid ${colors.accent}` }}>
-        <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 8 }}>PARSED TRANSCRIPT</div>
-        <p style={{ fontSize: 14, color: colors.textPrimary, fontStyle: 'italic', lineHeight: 1.6, fontWeight: 400, marginBottom: 8 }}>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="glass-card p-4"
+        style={{ borderRadius: 12, borderLeft: '3px solid #3B82F6' }}
+      >
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8 }}>
+          DETECTED CONSENT PHRASE
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)', fontStyle: 'italic', marginBottom: 8 }}>
           "Yes, I agree to the terms and conditions of this loan offer."
         </p>
-        <div style={{ fontSize: 10, color: colors.textSecondary, fontFamily: 'monospace' }}>Captured @ {timestamp}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          Captured at {timestamp} • Session #{token}
+        </div>
       </motion.div>
 
-      {/* Hash display */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-5" style={{ borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.border}` }}>
-        <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 8 }}>CRYPTOGRAPHIC LEDGER HASH</div>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: colors.textSecondary, wordBreak: 'break-all', lineHeight: 1.5, background: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 6, marginBottom: 12, border: `1px solid rgba(255,255,255,0.04)` }}>
+      {/* Hash */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="glass-card p-4"
+        style={{ borderRadius: 12 }}
+      >
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 6 }}>
+          CONSENT HASH (SHA-256)
+        </div>
+        <div
+          style={{
+            fontFamily: 'monospace', fontSize: 11, color: '#94A3B8',
+            letterSpacing: '0.05em', wordBreak: 'break-all', lineHeight: 1.6, marginBottom: 8
+          }}
+        >
           {hash}
         </div>
         <div className="flex items-center gap-1.5">
-          <ShieldCheck size={12} style={{ color: colors.success }} />
-          <span style={{ fontSize: 10, color: colors.success, fontWeight: 500, letterSpacing: '0.02em' }}>Immutable record generated</span>
+          <ShieldCheck size={12} style={{ color: '#10B981' }} />
+          <span style={{ fontSize: 11, color: '#10B981' }}>Tamper-evident record stored</span>
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }} className="flex items-center justify-center gap-2 py-4 mt-2" style={{ background: 'rgba(52, 211, 153, 0.05)', border: `1px solid rgba(52, 211, 153, 0.2)`, borderRadius: 10 }}>
-        <CheckCircle2 size={16} style={{ color: colors.success }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: colors.success, letterSpacing: '0.05em' }}>CONSENT VALIDATED</span>
+      {/* Status badge */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.6 }}
+        className="flex items-center justify-center gap-2 py-3 rounded-xl"
+        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
+      >
+        <CheckCircle2 size={16} style={{ color: '#10B981' }} />
+        <span className="font-bold" style={{ fontSize: 14, color: '#10B981', letterSpacing: '0.02em' }}>
+          CONSENT VERIFIED ✓
+        </span>
       </motion.div>
 
-      <button onClick={downloadConsent} className="w-full mt-2 py-4 flex items-center justify-center gap-2 font-semibold transition-all hover:bg-white/5" style={{ background: 'transparent', color: colors.textPrimary, border: `1px solid ${colors.borderHighlight}`, borderRadius: 10, fontSize: 12, letterSpacing: '0.02em', cursor: 'pointer' }}>
-        <Download size={14} /> EXPORT AUDIT TRAIL
+      {/* Export button */}
+      <button
+        className="btn-outline flex items-center justify-center gap-2"
+        style={{ height: 44, fontSize: 13 }}
+        onClick={downloadConsent}
+      >
+        <Download size={14} />
+        Export Consent Trail
       </button>
     </div>
   );
@@ -502,26 +587,29 @@ function Stage5Complete({ token, loanAmount, tenure }) {
       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", duration: 0.8 }} className="w-20 h-20 rounded-full flex items-center justify-center mb-2" style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.3)', boxShadow: '0 0 40px rgba(52, 211, 153, 0.2)' }}>
         <CheckCircle2 size={36} style={{ color: colors.success }} />
       </motion.div>
-      
+
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <h3 style={{ fontSize: 22, fontWeight: 700, color: colors.textPrimary, letterSpacing: '-0.02em', marginBottom: 8 }}>Execution Complete</h3>
         <p style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>Capital layout optimized. Funds are queued for instantaneous transfer.</p>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="w-full p-5 mt-2" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="flex flex-col items-center gap-1">
-            <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.08em', fontWeight: 600 }}>CAPITAL</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>{fmtINR(loanAmount)}</span>
-          </div>
-          <div className="flex flex-col items-center gap-1 border-l border-r" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-            <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.08em', fontWeight: 600 }}>EMI</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>{fmtINR(emi)}</span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.08em', fontWeight: 600 }}>TERM</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>{tenure} mo</span>
-          </div>
+      {/* Summary card */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.25 }}
+        className="glass-card w-full"
+        style={{ borderRadius: 12, padding: '14px 16px' }}
+      >
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'AMOUNT', value: fmtINR(loanAmount) },
+            { label: 'EMI', value: `${fmtINR(emi)}/mo` },
+            { label: 'TENURE', value: `${tenure} mo` },
+          ].map(item => (
+            <div key={item.label} className="flex flex-col items-center gap-1">
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>{item.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{item.value}</span>
+            </div>
+          ))}
         </div>
       </motion.div>
 
@@ -541,41 +629,165 @@ function Stage5Complete({ token, loanAmount, tenure }) {
 /* ─── Control Panels ─────────────────────────────────── */
 function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
   return (
-    <div className="relative flex flex-col h-full w-full" style={{ background: colors.bgBase }}>
-      {/* Absolute faint background texture or noise could go here */}
-      <div className="absolute inset-0 bg-[#020202]">
-        <div className="absolute w-[800px] h-[800px] -top-[400px] -left-[200px] bg-[#38BDF8] opacity-[0.03] rounded-full blur-[120px]" />
-      </div>
-
-      <div className="absolute top-6 left-6 flex items-center gap-2 z-10">
-        <div className="flex items-center justify-center w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-pulse" />
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#EF4444', letterSpacing: '0.15em', ...typography }}>LIVE LINK</span>
-      </div>
-      <div className="absolute top-6 right-6 flex items-center gap-1.5 z-10 px-2 py-1 rounded" style={{ background: 'rgba(52, 211, 153, 0.1)' }}>
-        <Lock size={10} style={{ color: colors.success }} />
-        <span style={{ fontSize: 9, fontWeight: 700, color: colors.success, letterSpacing: '0.1em', ...typography }}>E2E ENCRYPTED</span>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-4 relative z-10">
-        <PremiumOrb />
-        
-        <div className="mt-16 flex flex-col items-center gap-6">
-          <div className="flex flex-col items-center gap-1">
-            <span style={{ fontSize: 11, color: colors.textMuted, letterSpacing: '0.2em', fontWeight: 600, ...typography }}>AI AGENT</span>
-            <span style={{ fontSize: 18, color: colors.textPrimary, fontWeight: 500, letterSpacing: '-0.02em', ...typography }}>Financial Protocol v4</span>
+    <div
+      className="flex items-stretch px-3 py-3"
+      style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
+    >
+      {STEPS.map((step, i) => {
+        const stage = i + 1;
+        const done = stage < currentStage;
+        const active = stage === currentStage;
+        const Icon = step.icon;
+        return (
+          <div key={step.label} className="flex-1 flex flex-col items-center gap-1 relative">
+            {/* Connector line */}
+            {i < STEPS.length - 1 && (
+              <div
+                style={{
+                  position: 'absolute', top: 14, left: '50%', width: '100%', height: 2, zIndex: 0,
+                  background: done ? '#10B981' : 'rgba(255,255,255,0.07)',
+                  transition: 'background 0.4s ease',
+                }}
+              />
+            )}
+            {/* Circle */}
+            <div
+              className={active ? 'stage-active-pulse' : ''}
+              style={{
+                width: 28, height: 28, borderRadius: '50%', zIndex: 1, position: 'relative',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: done ? 'rgba(16,185,129,0.18)' :
+                  active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)',
+                border: done ? '1.5px solid rgba(16,185,129,0.5)' :
+                  active ? '1.5px solid rgba(59,130,246,0.55)' : '1.5px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              {done
+                ? <CheckCircle size={13} style={{ color: '#10B981' }} />
+                : <Icon size={13} style={{ color: active ? '#3B82F6' : '#475569' }} />
+              }
+            </div>
+            {/* Label — hidden on very small mobile */}
+            <span
+              className="text-[9px] sm:text-[10px] text-center leading-tight hidden sm:block"
+              style={{ color: done ? '#10B981' : active ? '#3B82F6' : 'var(--text-muted)' }}
+            >
+              {step.label}
+            </span>
           </div>
-          <FluidVoiceVisualizer />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Left Panel ─────────────────────────────────────── */
+function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
+  return (
+    <div
+      className="relative flex flex-col"
+      style={{
+        flex: '0 0 65%',
+        background: 'radial-gradient(ellipse at 50% 50%, #0F1628 0%, #0D0D14 60%, #080810 100%)',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Live badge */}
+      <div className="absolute top-4 left-4 flex items-center gap-1.5 glass-pill px-3 py-1.5 z-10">
+        <span
+          style={{
+            width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0,
+            boxShadow: '0 0 8px rgba(239,68,68,0.8)',
+            animation: 'pulseGlow 1.5s ease-in-out infinite',
+          }}
+        />
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', letterSpacing: '0.1em' }}>LIVE</span>
+      </div>
+
+      {/* Secure badge */}
+      <div className="absolute top-4 right-4 flex items-center gap-1.5 glass-pill px-3 py-1.5 z-10">
+        <Lock size={11} style={{ color: '#10B981' }} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#10B981', letterSpacing: '0.06em' }}>SECURE SESSION</span>
+      </div>
+
+      {/* Center content */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
+        {/* Ambient glow ring behind avatar */}
+        <div style={{ position: 'relative' }}>
+          <motion.div
+            animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              position: 'absolute', inset: -16, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(59,130,246,0.25) 0%, transparent 70%)',
+              filter: 'blur(12px)',
+            }}
+          />
+          {/* Avatar */}
+          <div
+            style={{
+              width: 120, height: 120, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(24px)',
+              border: '2px solid rgba(59,130,246,0.5)',
+              boxShadow: '0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(59,130,246,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 32, fontWeight: 700, color: '#3B82F6' }}>AI</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center gap-3">
+          <span style={{ fontSize: 16, fontFamily: 'Sora, sans-serif', color: '#F8FAFC', fontWeight: 500 }}>
+            AI Loan Officer
+          </span>
+          <SpeakingBars />
         </div>
       </div>
 
-      <div className="absolute bottom-8 left-0 right-0 flex items-center justify-between px-8 z-20">
-        <Typewriter />
-        <div className="flex items-center gap-3">
-          <button onClick={() => setIsMicOn(!isMicOn)} className="flex items-center justify-center w-12 h-12 rounded-full transition-all" style={{ background: isMicOn ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isMicOn ? 'rgba(56, 189, 248, 0.3)' : colors.border}` }}>
-            {isMicOn ? <Mic size={16} color={colors.accent} /> : <MicOff size={16} color={colors.textSecondary} />}
+      {/* Caption bar */}
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-3"
+        style={{
+          background: 'rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          flexShrink: 0,
+        }}
+      >
+        <div className="flex-1 min-w-0">
+          <Typewriter />
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setIsMicOn(v => !v)}
+            className="flex items-center gap-1.5 glass-pill px-3 py-2 transition-all duration-150"
+            style={{
+              border: isMicOn ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: isMicOn ? '0 0 12px rgba(59,130,246,0.25)' : 'none',
+            }}
+          >
+            {isMicOn
+              ? <Mic size={13} style={{ color: '#3B82F6' }} />
+              : <MicOff size={13} style={{ color: '#475569' }} />
+            }
           </button>
-          <button onClick={() => setIsVideoOn(!isVideoOn)} className="flex items-center justify-center w-12 h-12 rounded-full transition-all" style={{ background: isVideoOn ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isVideoOn ? 'rgba(56, 189, 248, 0.3)' : colors.border}` }}>
-            {isVideoOn ? <Video size={16} color={colors.accent} /> : <VideoOff size={16} color={colors.textSecondary} />}
+          <button
+            onClick={() => setIsVideoOn(v => !v)}
+            className="flex items-center gap-1.5 glass-pill px-3 py-2 transition-all duration-150"
+            style={{
+              border: isVideoOn ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: isVideoOn ? '0 0 12px rgba(59,130,246,0.25)' : 'none',
+            }}
+          >
+            {isVideoOn
+              ? <Video size={13} style={{ color: '#3B82F6' }} />
+              : <VideoOff size={13} style={{ color: '#475569' }} />
+            }
           </button>
         </div>
       </div>
@@ -583,15 +795,18 @@ function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
   );
 }
 
+/* ─── Right Panel ────────────────────────────────────── */
 function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanAmount, tenure, setTenure }) {
+  function handleAcceptOffer() { setCurrentStage(4); }
+
   return (
     <div className="flex flex-col h-full w-full relative z-20" style={{ background: colors.bgPanel, borderLeft: `1px solid ${colors.border}` }}>
-      
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
         <div className="flex flex-col gap-1">
           <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.15em', fontWeight: 600, ...typography }}>SESSION LOG</div>
-          <div style={{ fontSize: 13, color: colors.textPrimary, fontWeight: 500, letterSpacing: '0.05em', fontFamily: 'monospace' }}>TKN-{token?.slice(0,4).toUpperCase() || 'A4X9'}</div>
+          <div style={{ fontSize: 13, color: colors.textPrimary, fontWeight: 500, letterSpacing: '0.05em', fontFamily: 'monospace' }}>TKN-{token?.slice(0, 4).toUpperCase() || 'A4X9'}</div>
         </div>
         <button className="px-3 py-1.5 rounded" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${colors.border}`, fontSize: 10, color: colors.textSecondary, fontWeight: 600, letterSpacing: '0.05em', ...typography }}>
           MANUAL OVERRIDE
@@ -621,10 +836,22 @@ function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanA
       {/* Dynamic Content */}
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
         <AnimatePresence mode="wait">
-          <motion.div key={currentStage} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
+          <motion.div
+            key={currentStage}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
             {currentStage === 1 && <Stage1KYC />}
             {currentStage === 2 && <Stage2Verify />}
-            {currentStage === 3 && <Stage3Offer loanAmount={loanAmount} setLoanAmount={setLoanAmount} tenure={tenure} setTenure={setTenure} onAccept={() => setCurrentStage(4)} />}
+            {currentStage === 3 && (
+              <Stage3Offer
+                loanAmount={loanAmount} setLoanAmount={setLoanAmount}
+                tenure={tenure} setTenure={setTenure}
+                onAccept={handleAcceptOffer}
+              />
+            )}
             {currentStage === 4 && <Stage4Consent token={token} />}
             {currentStage === 5 && <Stage5Complete token={token} loanAmount={loanAmount} tenure={tenure} />}
           </motion.div>
@@ -633,19 +860,19 @@ function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanA
 
       {/* Footer Navigation */}
       <div className="flex items-center justify-between px-6 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-        <button 
+        <button
           onClick={() => setCurrentStage(s => Math.max(1, s - 1))}
           disabled={currentStage === 1 || currentStage === 5}
-          className="flex items-center gap-1.5 px-3 py-2 transition-opacity" 
+          className="flex items-center gap-1.5 px-3 py-2 transition-opacity"
           style={{ opacity: (currentStage === 1 || currentStage === 5) ? 0.3 : 1, color: colors.textSecondary, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', ...typography }}
         >
           <ChevronLeft size={14} /> REVERT
         </button>
         <span style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', ...typography }}>PHASE 0{currentStage} // 05</span>
-        <button 
+        <button
           onClick={() => setCurrentStage(s => Math.min(5, s + 1))}
           disabled={currentStage === 5}
-          className="flex items-center gap-1.5 px-3 py-2 rounded transition-all" 
+          className="flex items-center gap-1.5 px-3 py-2 rounded transition-all"
           style={{ opacity: currentStage === 5 ? 0.3 : 1, background: 'rgba(255,255,255,0.05)', color: colors.textPrimary, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', ...typography }}
         >
           PROCEED <ChevronRight size={14} />
@@ -664,19 +891,65 @@ export default function VideoCallPage() {
   const [loanAmount, setLoanAmount] = useState(200000);
   const [tenure, setTenure] = useState(60);
 
+  // ─── AI Hooks ─────────────────────────────────────────
+  const { isListening, micError, isProcessing } = useAudioCapture(isMicOn);
+  const aiState = useAIState({ debounceMs: 500 });
+  // Derive a safe Jitsi room name from the URL token
+  // Must be alphanumeric + hyphens only; prefix with 'agentfinance-'
+  const roomName = `agentfinance-${(token || 'demo').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+
   useEffect(() => {
     document.body.style.backgroundColor = colors.bgBase;
     return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
   return (
-    <div className="flex flex-col md:flex-row w-full h-screen overflow-hidden" style={{ ...typography, background: colors.bgBase }}>
-      <div className="flex-none h-[40vh] md:h-full md:w-[60%]">
-        <LeftPanel isMicOn={isMicOn} setIsMicOn={setIsMicOn} isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn} />
+    <>
+      {/* Desktop — two panel fixed layout */}
+      <div
+        className="hidden md:flex"
+        style={{
+          position: 'fixed', top: 64, left: 0, right: 0, bottom: 0,
+          zIndex: 10, overflow: 'hidden',
+        }}
+      >
+        <LeftPanel
+          isMicOn={isMicOn} setIsMicOn={setIsMicOn}
+          isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
+        />
+        <RightPanel
+          currentStage={currentStage} setCurrentStage={setCurrentStage}
+          token={token}
+          loanAmount={loanAmount} setLoanAmount={setLoanAmount}
+          tenure={tenure} setTenure={setTenure}
+        />
       </div>
-      <div className="flex-1 h-[60vh] md:h-full">
-        <RightPanel currentStage={currentStage} setCurrentStage={setCurrentStage} token={token} loanAmount={loanAmount} setLoanAmount={setLoanAmount} tenure={tenure} setTenure={setTenure} />
+
+      {/* Mobile — stacked layout */}
+      <div
+        className="flex md:hidden flex-col"
+        style={{
+          position: 'fixed', top: 64, left: 0, right: 0, bottom: 0,
+          zIndex: 10, overflow: 'hidden',
+        }}
+      >
+        {/* Video — top 42% */}
+        <div style={{ flex: '0 0 42%', position: 'relative', overflow: 'hidden' }}>
+          <LeftPanel
+            isMicOn={isMicOn} setIsMicOn={setIsMicOn}
+            isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
+          />
+        </div>
+        {/* Context panel — fills rest */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <RightPanel
+            currentStage={currentStage} setCurrentStage={setCurrentStage}
+            token={token}
+            loanAmount={loanAmount} setLoanAmount={setLoanAmount}
+            tenure={tenure} setTenure={setTenure}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
