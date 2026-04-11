@@ -27,6 +27,7 @@ import {
   updateExtractedData,
   updateRisk,
   updateIntent,
+  updateLiveness,
   updateConsent,
   incrementStats,
   incrementUtterances,
@@ -351,14 +352,21 @@ export async function processVideoFrame(base64Image) {
   log('INTERACTION', 'INFO', 'Processing video frame for visual analysis');
 
   try {
-    const { age, confidence } = await predictAgeFromFrame(base64Image);
+    const { age, isLivePerson, confidence } = await predictAgeFromFrame(base64Image);
+
+    // Update Liveness explicitly regardless of whether age was found
+    if (isLivePerson !== null) {
+      updateLiveness(isLivePerson, confidence);
+      console.log(`[VIDEO_ANALYSIS] Liveness check: ${isLivePerson}`);
+    }
 
     if (age !== null) {
       console.log(`[VIDEO_ANALYSIS] Age predicted: ${age} (confidence: ${confidence})`);
       const currentState = getState();
+
       const nextExtraction = {
         ...currentState.extractedData,
-        age: {
+        biometricAge: {
           value: age,
           confidence: confidence,
           source: 'video_analysis',
@@ -366,7 +374,7 @@ export async function processVideoFrame(base64Image) {
         }
       };
 
-      updateExtractedData(nextExtraction, [`age: (predicted) ${age}`]);
+      updateExtractedData(nextExtraction, [`biometricAge: (predicted) ${age}`]);
     }
   } catch (error) {
     log('INTERACTION', 'ERROR', 'processVideoFrame failed', error.message);

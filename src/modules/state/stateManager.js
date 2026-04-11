@@ -56,6 +56,12 @@ function createInitialState() {
       timestamp: null,
     },
 
+    // Liveness Detection / Anti-Spoofing
+    liveness: {
+      isLivePerson: null,
+      confidence: 0,
+    },
+
     // Processing stats
     stats: {
       chunksProcessed: 0,
@@ -127,6 +133,16 @@ export function updateIntent(intentResult) {
   if (intentResult.intent !== prevIntent) {
     addToChangeLog('intent', [`${prevIntent} → ${intentResult.intent}`]);
   }
+  notifyListeners();
+}
+
+/**
+ * Update liveness detection variables.
+ * @param {boolean} isLivePerson
+ * @param {number} confidence
+ */
+export function updateLiveness(isLivePerson, confidence) {
+  state.liveness = { isLivePerson, confidence };
   notifyListeners();
 }
 
