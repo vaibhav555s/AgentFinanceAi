@@ -262,24 +262,33 @@ function _triggerFaceScan() {
   setTimeout(async () => {
     const aadhaarAge = state.aadhaar.age || null;
 
-    // Pull the vision-predicted age from the AI state
+    // Pull the vision-predicted age and liveness from the AI state
     let estimatedAge = null;
+    let isLivePerson = null;
     try {
       const { getState } = await import('../state/stateManager.js');
       const aiState = getState();
-      estimatedAge = aiState.extractedData?.age?.value ?? null;
+      estimatedAge = aiState.extractedData?.biometricAge?.value ?? null;
+      isLivePerson = aiState.liveness?.isLivePerson ?? null;
     } catch { /* silently fallback */ }
 
     // If vision hasn't run yet, fall back to aadhaarAge for now (matched)
     if (estimatedAge === null) {
       estimatedAge = aadhaarAge;
     }
+    // Default to true if the model couldn't determine liveness
+    if (isLivePerson === null) {
+      isLivePerson = true;
+    }
 
     const delta = aadhaarAge !== null && estimatedAge !== null ? Math.abs(estimatedAge - aadhaarAge) : null;
-    const matched = delta !== null ? delta <= 7 : true; // 7-year tolerance, or pass if no baseline
+    const isMatched = delta !== null ? delta <= 12 : true; // 12-year tolerance, or pass if no baseline
+
+    // Spoofing check overrides match status
+    const status = !isLivePerson ? 'spoof' : isMatched ? 'matched' : 'mismatch';
 
     const faceAge = {
-      status: matched ? 'matched' : 'mismatch',
+      status,
       estimatedAge,
       aadhaarAge,
       delta,
@@ -289,14 +298,22 @@ function _triggerFaceScan() {
     state = {
       ...state,
       phase: PHASES.FACE_DONE,
-      leftOverlay: matched ? 'scan_success' : 'scan_fail',
+      leftOverlay: status === 'matched' ? 'scan_success' : 'scan_fail',
       faceAge,
     };
     log('ORCHESTRATOR', 'INFO', '→ FACE_DONE (real vision)', faceAge);
     notify();
 
-    // Auto-trigger bureau check after 2s
-    setTimeout(() => _triggerBureau(), 2000);
+    // Auto-trigger bureau check after 2s ONLY if it passes
+    if (status === 'matched') {
+      setTimeout(() => _triggerBureau(), 2000);
+    } else if (status === 'spoof') {
+      log('ORCHESTRATOR', 'WARN', 'Halting progression due to anti-spoofing failure');
+      _speakError('You have failed the biometric liveness check. Please ensure you are a real person looking directly at the camera and not holding up a photograph.');
+    } else {
+      log('ORCHESTRATOR', 'WARN', 'Halting progression due to age mismatch');
+      _speakError('Your biometric age does not match your Aadhaar age. We cannot proceed with the application.');
+    }
   }, 3000);
 }
 

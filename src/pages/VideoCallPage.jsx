@@ -18,6 +18,7 @@ import {
   triggerConsent,
   PHASES,
 } from '../modules/orchestration/sessionOrchestrator.js';
+import { processVideoFrame } from '../modules/interaction/liveInteraction.js';
 
 /* ─── Helpers ─────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -149,24 +150,48 @@ function ConfBadge({ level }) {
 /* ─── Camera Frame ────────────────────────────────────── */
 function CameraFrame({ isVideoOn, onCameraReady }) {
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
 
   useEffect(() => {
     let active = null;
+    let frameInterval = null;
+
     if (isVideoOn) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(s => {
-          active = s; setStream(s);
+          active = s;
+          setStream(s);
           if (videoRef.current) videoRef.current.srcObject = s;
           onCameraReady?.();
+
+          // Start extracting frames every 8 seconds
+          frameInterval = setInterval(() => {
+            if (videoRef.current && canvasRef.current) {
+              const video = videoRef.current;
+              const canvas = canvasRef.current;
+              if (video.videoWidth > 0 && video.videoHeight > 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const frameData = canvas.toDataURL('image/jpeg', 0.8);
+                processVideoFrame(frameData).catch(console.error);
+              }
+            }
+          }, 8000);
         })
         .catch(() => onCameraReady?.());
     } else {
       stream?.getTracks().forEach(t => t.stop());
       setStream(null);
+      if (frameInterval) clearInterval(frameInterval);
       onCameraReady?.();
     }
-    return () => active?.getTracks().forEach(t => t.stop());
+    return () => {
+      active?.getTracks().forEach(t => t.stop());
+      if (frameInterval) clearInterval(frameInterval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideoOn]);
 
@@ -175,6 +200,7 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
       <video ref={videoRef} autoPlay playsInline muted
         style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isVideoOn && stream ? 1 : 0, transition: 'opacity 0.5s', transform: 'scaleX(-1)' }}
       />
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
       {(!isVideoOn || !stream) && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <VideoOff size={48} style={{ color: 'rgba(255,255,255,0.1)' }} />
@@ -604,11 +630,31 @@ function PanelAadhaarDone({ aadhaar, kycMismatch }) {
 
 /* ─── Phase: FACE_SCAN / FACE_DONE ───────────────────── */
 function PanelFaceScan({ faceAge, phase }) {
+  let title = 'Biometric Age Check';
+  let titleColor = C.text;
+  let iconColor = C.blue;
+
+  if (phase === PHASES.FACE_DONE) {
+    if (faceAge.status === 'matched') {
+      title = 'Age Matched ✓';
+      titleColor = C.text;
+      iconColor = C.green;
+    } else if (faceAge.status === 'spoof') {
+      title = 'LIVENESS SPOOF DETECTED';
+      titleColor = C.red;
+      iconColor = C.red;
+    } else {
+      title = 'Age Mismatch Detected';
+      titleColor = C.text;
+      iconColor = C.red;
+    }
+  }
+
   return (
     <div className="p-5 flex flex-col gap-4 items-center" style={{ paddingTop: 32 }}>
-      <ScanFace size={48} style={{ color: phase === PHASES.FACE_DONE ? (faceAge.status === 'matched' ? C.green : C.red) : C.blue, opacity: 0.8 }} />
-      <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: C.text }}>
-        {phase === PHASES.FACE_SCAN ? 'Biometric Age Check' : faceAge.status === 'matched' ? 'Age Matched ✓' : 'Age Mismatch Detected'}
+      <ScanFace size={48} style={{ color: iconColor, opacity: 0.8 }} />
+      <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: titleColor }}>
+        {title}
       </h3>
 
       {phase === PHASES.FACE_SCAN && (
@@ -622,9 +668,9 @@ function PanelFaceScan({ faceAge, phase }) {
           {[
             { label: 'Camera Age Estimate', value: `${faceAge.estimatedAge} years`, good: true },
             { label: 'Aadhaar Age', value: `${faceAge.aadhaarAge} years`, good: true },
-            { label: 'Age Delta', value: `${faceAge.delta} year${faceAge.delta !== 1 ? 's' : ''}`, good: faceAge.delta <= 5 },
-            { label: 'Confidence Score', value: `${(faceAge.confidence * 100).toFixed(0)}%`, good: true },
-            { label: 'Verdict', value: faceAge.status === 'matched' ? 'PASS' : 'FLAG — MISMATCH', good: faceAge.status === 'matched' },
+            { label: 'Age Delta', value: `${faceAge.delta} year${faceAge.delta !== 1 ? 's' : ''}`, good: faceAge.delta <= 12 },
+            { label: 'Liveness Match', value: faceAge.status !== 'spoof' ? 'LIVE PERSON' : 'SPOOF (PHOTO/VIDEO)', good: faceAge.status !== 'spoof' },
+            { label: 'Verdict', value: faceAge.status === 'matched' ? 'PASS' : 'FLAGGED', good: faceAge.status === 'matched' },
           ].map((row, i) => (
             <motion.div key={row.label} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
               style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>

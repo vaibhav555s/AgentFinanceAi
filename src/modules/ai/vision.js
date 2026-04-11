@@ -9,10 +9,10 @@ import { log } from '../utils/logger.js';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 /**
- * Predict user age from a base64 image frame using Groq Llama 4.
+ * Predict user age and liveness from a base64 image frame using Groq Llama 4.
  * 
  * @param {string} base64Image - Data URL or raw base64 string
- * @returns {Promise<{ age: number|null, confidence: number }>}
+ * @returns {Promise<{ age: number|null, isLivePerson: boolean|null, confidence: number }>}
  */
 export async function predictAgeFromFrame(base64Image) {
     log('VISION', 'INFO', 'Analyzing frame with Groq Llama 4 Scout...');
@@ -35,7 +35,7 @@ export async function predictAgeFromFrame(base64Image) {
                     content: [
                         {
                             type: 'text',
-                            text: 'Estimate the age of the person in this image. Respond with ONLY the numeric age (e.g., "25"). If no person is found, respond with 0.'
+                            text: 'Analyze this image for two things: 1) Estimate the numeric age of the person. 2) Determine if this is a live person physically matching the camera, OR if it is a spoof (a static photo, screen displaying a face, deepfake, holding up a printed picture). Look extremely closely for rectangular borders of a phone screen, fingers holding a photo, moiré patterns from a digital screen, or paper glare/reflections. If there is ANY visual evidence that this is a photo of a photo or a screen in a screen, set isLivePerson to false. Respond EXACTLY in this JSON format: {"age": 25, "isLivePerson": true}. If no person is found, return {"age": 0, "isLivePerson": false}. Output ONLY valid JSON.'
                         },
                         {
                             type: 'image_url',
@@ -47,7 +47,8 @@ export async function predictAgeFromFrame(base64Image) {
                     ]
                 }
             ],
-            max_tokens: 50,
+            response_format: { type: "json_object" },
+            max_tokens: 100,
         }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -56,21 +57,30 @@ export async function predictAgeFromFrame(base64Image) {
             timeout: 15000
         });
 
-        const aiText = response.data.choices[0]?.message?.content || '';
+        const aiText = response.data.choices[0]?.message?.content || '{}';
         log('VISION', 'INFO', `Vision raw response: "${aiText}"`);
 
-        const ageMatch = aiText.match(/\d+/);
-        const age = ageMatch ? parseInt(ageMatch[0]) : 0;
-
-        if (age > 0 && age < 120) {
-            return { age, confidence: 0.85 };
+        let result = { age: 0, isLivePerson: false };
+        try {
+            // Find JSON boundaries just in case
+            const jsonStr = aiText.substring(aiText.indexOf('{'), aiText.lastIndexOf('}') + 1);
+            result = JSON.parse(jsonStr);
+        } catch (e) {
+            log('VISION', 'WARN', 'Failed to parse JSON from Vision model');
         }
 
-        return { age: null, confidence: 0 };
+        const age = Number(result.age) || 0;
+        const isLivePerson = Boolean(result.isLivePerson);
+
+        if (age > 0 && age < 120) {
+            return { age, isLivePerson, confidence: 0.85 };
+        }
+
+        return { age: null, isLivePerson: false, confidence: 0 };
     } catch (error) {
         const detail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
         log('VISION', 'ERROR', `Groq Vision API error: ${detail}`);
-        return { age: null, confidence: 0 };
+        return { age: null, isLivePerson: false, confidence: 0 };
     }
 }
 
