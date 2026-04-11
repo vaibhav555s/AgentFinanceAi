@@ -19,6 +19,8 @@ import { extractFinancialData, mergeExtractedData } from '../ai/extraction.js';
 import { detectIntent } from '../ai/intent.js';
 import { assessRisk } from '../ai/risk.js';
 import { detectConsent, resetConsent } from '../ai/consent.js';
+import { generateResponse } from '../ai/chat.js';
+import { synthesizeAndPlay, isAudioPlaying } from '../tts/sarvamTTS.js';
 import {
   getState,
   updateExtractedData,
@@ -85,7 +87,7 @@ let previousExtraction = null; // Track for inconsistency detection
  * Run the full AI pipeline on the accumulated transcript.
  * Called after debounce settles.
  */
-function runAIPipeline() {
+async function runAIPipeline() {
   const startTime = performance.now();
   const currentState = getState();
 
@@ -129,6 +131,22 @@ function runAIPipeline() {
       risk: riskResult.level,
       consent: consentResult.consent,
     });
+
+    // 7. Generate a conversational AI response based on updated state
+    const transcript = getTranscript(); // get full transcript so we know sequence
+    const aiResponseText = await generateResponse(transcript, merged);
+
+    // Check if we should actually speak (avoid interrupting current speech and avoid repeating)
+    const lastAgentText = transcript.slice().reverse().find(t => t.speaker === 'agent')?.text;
+
+    if (aiResponseText && aiResponseText !== lastAgentText && !isAudioPlaying()) {
+      addTranscript('agent', aiResponseText, 1.0);
+      try {
+        await synthesizeAndPlay(aiResponseText);
+      } catch (err) {
+        log('INTERACTION', 'ERROR', 'Could not play TTS', err);
+      }
+    }
 
   } catch (error) {
     incrementErrors();
