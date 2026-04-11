@@ -11,10 +11,16 @@ export const getApplicationId = () => activeApplicationId;
 
 export const initLoanApplication = async (metadata = {}) => {
   try {
+    // Session expires in 48 hours
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
     const { data, error } = await supabase
       .from('loan_applications')
       .insert([{
+        user_id: metadata.user_id || null,
         status: 'pending_kyc',
+        resume_checkpoint: 'chat_started',
+        expires_at: expiresAt,
         ip_address: metadata.ip_address,
         latitude: metadata.latitude,
         longitude: metadata.longitude,
@@ -34,6 +40,52 @@ export const initLoanApplication = async (metadata = {}) => {
     return null;
   }
 };
+
+export const fetchApplicationState = async (appId) => {
+  try {
+    const { data: appData, error: appErr } = await supabase
+      .from('loan_applications')
+      .select('*')
+      .eq('id', appId)
+      .single();
+    if (appErr) throw appErr;
+    
+    activeApplicationId = appId;
+    
+    // Also fetch historical events so we can re-populate transcript
+    const { data: eventsData, error: evErr } = await supabase
+      .from('application_events')
+      .select('*')
+      .eq('application_id', appId)
+      .order('created_at', { ascending: true });
+      
+    if (evErr) throw evErr;
+
+    return { application: appData, events: eventsData || [] };
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to fetch application state for ${appId}`, err);
+    return null;
+  }
+};
+
+export const updateResumeCheckpoint = async (checkpoint, extras = {}) => {
+  if (!activeApplicationId) return;
+  try {
+    const { error } = await supabase
+      .from('loan_applications')
+      .update({
+        resume_checkpoint: checkpoint,
+        updated_at: new Date().toISOString(),
+        ...extras
+      })
+      .eq('id', activeApplicationId);
+    if (error) throw error;
+    log('DB', 'INFO', `Updated checkpoint to ${checkpoint} for ${activeApplicationId}`);
+  } catch (err) {
+    log('DB', 'ERROR', 'Failed to update resume checkpoint', err);
+  }
+};
+
 
 /**
  * Velocity Check: Returns the count of applications from the same device 
@@ -137,6 +189,7 @@ export const updateApplicationFinancials = async (extractedData) => {
         stated_income: parseFloat(extractedData?.income?.value) || null,
         loan_purpose: extractedData?.purpose?.value || null,
         employment_type: extractedData?.employment?.value || null,
+        intent_category: extractedData?.purpose?.value ? 'personal_loan' : null,
         updated_at: new Date().toISOString()
       })
       .eq('id', activeApplicationId);
@@ -291,5 +344,152 @@ export const completeApplication = async (status, selectedPlanName = null) => {
     log('DB', 'INFO', `Application ${activeApplicationId} closed with status: ${status}`);
   } catch (err) {
     log('DB', 'ERROR', 'Failed to complete application', err);
+  }
+};
+
+/**
+ * Tier 5: Persists LLM chain-of-thought intelligence analysis.
+ * Stores intent classification + risk persona with full reasoning traces.
+ *
+ * @param {string} applicationId - The application UUID
+ * @param {{ intent: Object, riskPersona: Object }} analysisData
+ */
+export const saveIntelligenceAnalysis = async (applicationId, analysisData) => {
+  if (!applicationId || !analysisData) return;
+  try {
+    const updatePayload = {};
+
+    if (analysisData.intent) {
+      updatePayload.intent_category = analysisData.intent.category;
+      updatePayload.intent_confidence = analysisData.intent.confidence;
+      updatePayload.intent_reasoning = analysisData.intent.chainOfThought;
+    }
+
+    if (analysisData.riskPersona) {
+      updatePayload.risk_persona = analysisData.riskPersona.label;
+      updatePayload.risk_reasoning = analysisData.riskPersona.chainOfThought;
+    }
+
+    const { error } = await supabase
+      .from('loan_applications')
+      .update(updatePayload)
+      .eq('id', applicationId);
+
+    if (error) throw error;
+    log('DB', 'INFO', `Saved Tier 5 intelligence analysis for ${applicationId}`);
+  } catch (err) {
+    log('DB', 'ERROR', 'Failed to save intelligence analysis', err);
+  }
+};
+
+export const lockApplication = async (appId, sessionId) => {
+  try {
+    const { data, error } = await supabase
+      .from('loan_applications')
+      .update({ is_active_session: true, active_session_id: sessionId })
+      .eq('id', appId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to lock application ${appId}`, err);
+    return false;
+  }
+};
+
+export const unlockApplication = async (appId) => {
+  try {
+    const { error } = await supabase
+      .from('loan_applications')
+      .update({ is_active_session: false, active_session_id: null })
+      .eq('id', appId);
+
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to unlock app ${appId}`, err);
+  }
+};
+
+export const logApplicationEvent = async (appId, eventName, metadata = {}) => {
+  try {
+    const { error } = await supabase
+      .from('application_events')
+      .insert([{
+        application_id: appId,
+        event: eventName,
+        metadata: metadata
+      }]);
+    
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'WARN', `Could not log application event ${eventName}`, err);
+  }
+};
+
+export const logConsent = async (appId, consentText, ip = '127.0.0.1') => {
+  try {
+    const { error } = await supabase
+      .from('consent_records')
+      .insert([{
+        application_id: appId,
+        consent_text: consentText,
+        user_ip: ip
+      }]);
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'WARN', `Could not log consent for app ${appId}`, err);
+  }
+};
+
+export const logRegulatoryFlag = async (appId, flagType, severity, description = '') => {
+  try {
+    const { error } = await supabase
+      .from('regulatory_flags')
+      .insert([{
+        application_id: appId,
+        flag_type: flagType,
+        severity: severity,
+        description: description
+      }]);
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'WARN', `Could not log regulatory flag for app ${appId}`, err);
+  }
+};
+
+export const fetchPipelineMetrics = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('loan_applications')
+      .select('application_stage, status');
+      
+    if (error) throw error;
+    
+    const dropoffData = {
+      overall: data.length,
+      kyc_started: 0,
+      kyc_completed: 0,
+      bureau_started: 0,
+      bureau_completed: 0,
+      offer_started: 0,
+      completed: 0
+    };
+
+    data.forEach(app => {
+      // Simplified mapping based on stages
+      if (['kyc', 'bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.kyc_started++;
+      if (['bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.kyc_completed++;
+      if (['bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.bureau_started++;
+      if (['offer', 'completed'].includes(app.application_stage)) dropoffData.bureau_completed++;
+      if (['offer', 'completed'].includes(app.application_stage)) dropoffData.offer_started++;
+      if (app.application_stage === 'completed' || app.status === 'funded' || app.status === 'completed') dropoffData.completed++;
+    });
+
+    return dropoffData;
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to fetch pipeline metrics`, err);
+    return null;
   }
 };

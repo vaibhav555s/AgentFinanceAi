@@ -7,6 +7,8 @@ import LandingPage from './pages/LandingPage';
 import VideoCallPage from './pages/VideoCallPage';
 import OpsDashboard from './pages/OpsDashboard';
 import CompliancePage from './pages/CompliancePage';
+import AuthPage from './pages/AuthPage';
+import UserDashboard from './pages/UserDashboard';
 import { AadhaarVerificationPage } from './modules/aadhaar-verification';
 
 function ScrollToTop() {
@@ -35,6 +37,8 @@ function AppLayout() {
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/dashboard" element={<UserDashboard />} />
           <Route path="/session/:token" element={<VideoCallPage />} />
           <Route path="/ops" element={<OpsDashboard />} />
           <Route path="/compliance" element={<CompliancePage />} />

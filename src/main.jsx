@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import liveInteraction from './modules/interaction/liveInteraction.js';
+import { AuthProvider } from './context/AuthContext.jsx'
 
 // Expose AI modules to window for easy testing in the browser console
 window.AI = liveInteraction;
@@ -15,6 +16,8 @@ document.documentElement.classList.add(theme)
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 )

@@ -37,10 +37,19 @@ import {
   updateApplicationFinancials,
   uploadMedia,
   getFingerprintVelocity,
-  saveFraudReport
+  saveFraudReport,
+  saveIntelligenceAnalysis,
+  getApplicationId,
+  setApplicationId,
+  updateResumeCheckpoint,
+  logApplicationEvent
 } from '../../services/dbService.js';
 import { captureSecurityMetadata } from '../../services/securityService.js';
 import { analyzeFraudRisk } from '../fraud/fraudEngine.js';
+import { analyzeSessionIntelligence } from '../ai/intelligenceAgent.js';
+
+let lastPhaseForTracking = null;
+
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -60,6 +69,8 @@ export const PHASES = {
 function createInitialState() {
   return {
     phase: PHASES.CHAT,
+    userId: null,
+    kycType: 'aadhaar', // 'aadhaar' | 'pan'
     aadhaar: {
       status: null,       // null | 'verified' | 'failed'
       name: null,
@@ -134,6 +145,11 @@ export function getPhase() {
   return state.phase;
 }
 
+export function setUserId(userId) {
+  state = { ...state, userId };
+  notify();
+}
+
 /* ─── Subscriber ─────────────────────────────────────── */
 export function subscribeOrchestrator(fn) {
   listeners.add(fn);
@@ -145,6 +161,82 @@ function notify() {
   listeners.forEach(fn => {
     try { fn(snap); } catch (e) { /* ignore */ }
   });
+
+  // Automatically checkpoint progress if phase changed
+  if (snap.phase !== lastPhaseForTracking) {
+    lastPhaseForTracking = snap.phase;
+    const appId = getApplicationId();
+    if (appId) {
+      updateResumeCheckpoint(snap.phase.toLowerCase());
+      logApplicationEvent(appId, `phase_transition`, { new_phase: snap.phase });
+    }
+  }
+}
+
+export async function rehydrateSession(appState) {
+  const { application, kyc } = appState;
+  
+  log('ORCHESTRATOR', 'INFO', `Rehydrating session for app ${application.id}`);
+  setApplicationId(application.id);
+  state = { ...state, userId: application.user_id };
+
+  const phaseMap = {
+     'chat': PHASES.CHAT,
+     'chat_started': PHASES.CHAT,
+     'aadhaar_upload': PHASES.AADHAAR_UPLOAD,
+     'aadhaar_verify': PHASES.AADHAAR_VERIFY,
+     'aadhaar_done': PHASES.AADHAAR_DONE,
+     'face_scan': PHASES.FACE_SCAN,
+     'face_done': PHASES.FACE_DONE,
+     'bureau': PHASES.BUREAU,
+     'offer': PHASES.OFFER,
+     'consent': PHASES.CONSENT,
+     'complete': PHASES.COMPLETE,
+  };
+  
+  const targetPhaseStr = application.resume_checkpoint || 'chat_started';
+  const targetPhase = phaseMap[targetPhaseStr] || PHASES.CHAT;
+
+  if (kyc) {
+     if (kyc.aadhaar_name) {
+       state.aadhaar = {
+         status: 'verified',
+         name: kyc.aadhaar_name,
+         age: kyc.aadhaar_age,
+         aadhaarNumber: 'XXXX XXXX XXXX',
+         storageUrl: kyc.aadhaar_image_url
+       };
+     }
+     if (kyc.biometric_age) {
+        state.faceAge = {
+          status: kyc.biometric_match_status,
+          estimatedAge: kyc.biometric_age,
+          confidence: 0.85
+        };
+     }
+  }
+
+  // Pre-load offer state if resuming into Offer, Consent or Complete.
+  if (application.final_offer_id || application.status === 'offer_generated' || application.status === 'negotiating') {
+    // In a full implementation we would fetch loan_offers from DB here, 
+    // but we can set basic placeholder bounds based on application table too:
+    state.offer = {
+      amount: application.stated_income ? application.stated_income * 3 : 250000,
+      tenure: 36,
+      interestRate: 10.5,
+    };
+  }
+
+  state.phase = targetPhase;
+  notify();
+
+  // UX Suggestion: TTS welcome back
+  try {
+    const { synthesizeAndPlay } = await import('../tts/sarvamTTS.js');
+    await synthesizeAndPlay("Welcome back. Resuming your verification process.", {});
+  } catch (err) {
+    console.error('Failed to speak welcome back:', err);
+  }
 }
 
 /* ─── Phase Transitions ──────────────────────────────── */
@@ -164,7 +256,8 @@ export async function triggerAadhaarUpload() {
   const { riskScore, signals } = analyzeFraudRisk(securityMetadata, velocity);
 
   // 2. Initialize application in Supabase with security + fraud data
-  const appData = await initLoanApplication(securityMetadata);
+  const metaWithUser = { ...securityMetadata, user_id: state.userId };
+  const appData = await initLoanApplication(metaWithUser);
   const appId = appData?.id;
 
   // 2a. Save the fraud report immediately
@@ -188,6 +281,24 @@ export async function triggerAadhaarUpload() {
   }
 
   log('ORCHESTRATOR', 'INFO', `DB application created: ${appId}`);
+
+  // TIER 5: Fire-and-forget LLM chain-of-thought analysis
+  // Runs entirely in the background — does NOT block the Aadhaar upload UI
+  if (appId) {
+    (async () => {
+      try {
+        const { getTranscript } = await import('../transcript/transcriptManager.js');
+        const transcript = getTranscript();
+        const analysis = await analyzeSessionIntelligence(transcript);
+        if (analysis) {
+          await saveIntelligenceAnalysis(appId, analysis);
+          log('ORCHESTRATOR', 'INFO', '✅ Tier 5 intelligence analysis saved to DB');
+        }
+      } catch (err) {
+        log('ORCHESTRATOR', 'WARN', 'Tier 5 intelligence background analysis failed', err);
+      }
+    })();
+  }
 }
 
 /** Called when user has uploaded the Aadhaar file */
