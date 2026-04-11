@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../lib/supabaseClient';
+import { fetchPipelineMetrics } from '../services/dbService';
 import {
   LayoutDashboard, Radio, AlertTriangle, FileText, Shield,
   Zap, CheckCircle, TrendingUp, TrendingDown, MessageSquare,
@@ -9,41 +11,11 @@ import {
 } from 'lucide-react';
 
 /* ─── Mock data ──────────────────────────────────────── */
-const TRANSCRIPT = [
-  { role: 'ai', name: 'AI Agent', msg: 'Hello Rahul, welcome to AgentFinance. I\'m your AI loan officer today. Can you confirm your full name for me?', time: '14:28:01' },
-  { role: 'user', name: 'Rahul', msg: 'Yes, my name is Rahul Sharma.', time: '14:28:08' },
-  { role: 'ai', name: 'AI Agent', msg: 'Thank you Rahul. Could you tell me your current employment status and monthly income?', time: '14:28:12' },
-  { role: 'user', name: 'Rahul', msg: 'I work at a private company, my monthly salary is around 85,000 rupees.', time: '14:28:24' },
-  { role: 'ai', name: 'AI Agent', msg: 'Excellent. And what would you primarily use this loan for?', time: '14:28:28' },
-  { role: 'user', name: 'Rahul', msg: 'I\'m planning to renovate my home.', time: '14:28:35' },
-  { role: 'ai', name: 'AI Agent', msg: 'Understood. How much are you looking to borrow?', time: '14:28:38' },
-  { role: 'user', name: 'Rahul', msg: 'Around 3 lakhs would be ideal.', time: '14:28:45' },
-  { role: 'ai', name: 'AI Agent', msg: 'Great. Let me now verify your identity. Could you hold up your PAN card to the camera?', time: '14:28:50' },
-  { role: 'user', name: 'Rahul', msg: 'Sure, here it is.', time: '14:28:58' },
-  { role: 'ai', name: 'AI Agent', msg: 'Perfect, I can see it clearly. Running verification now...', time: '14:29:02' },
-  { role: 'ai', name: 'AI Agent', msg: 'Verification complete. Your credit profile looks strong, Rahul.', time: '14:29:18' },
-  { role: 'ai', name: 'AI Agent', msg: 'Based on your profile, I\'m pleased to offer you a loan of ₹2,00,000 at 12% per annum.', time: '14:29:25' },
-  { role: 'user', name: 'Rahul', msg: 'Can I get a higher amount?', time: '14:29:31' },
-  { role: 'ai', name: 'AI Agent', msg: 'I understand. Given your income stability, I can extend up to ₹2,50,000. Would that work?', time: '14:29:40' },
-];
 
-const SESSIONS = [
-  { id: 'AF-7825', name: 'Priya Sharma',  amount: '₹3.5L', status: 'approved', score: 742, time: '2m 41s', risk: 'low',    stage: 5 },
-  { id: 'AF-7824', name: 'Rahul Mehta',   amount: '₹1.2L', status: 'live',     score: 681, time: '4m 12s', risk: 'medium', stage: 2 },
-  { id: 'AF-7823', name: 'Anita Desai',   amount: '₹5.0L', status: 'approved', score: 798, time: '3m 05s', risk: 'low',    stage: 5 },
-  { id: 'AF-7822', name: 'Vikram Nair',   amount: '₹2.0L', status: 'rejected', score: 524, time: '2m 18s', risk: 'high',   stage: 2 },
-  { id: 'AF-7821', name: 'Sunita Rao',    amount: '₹4.2L', status: 'approved', score: 715, time: '3m 50s', risk: 'low',    stage: 5 },
-  { id: 'AF-7820', name: 'Arjun Patel',   amount: '₹2.8L', status: 'approved', score: 755, time: '4m 22s', risk: 'low',    stage: 5 },
-  { id: 'AF-7819', name: 'Meera Gupta',   amount: '₹1.8L', status: 'pending',  score: 660, time: '1m 55s', risk: 'medium', stage: 3 },
-];
 
-const FRAUD_SIGNALS = [
-  { session: 'AF-7822', type: 'Document Mismatch',  severity: 'high',   desc: 'PAN card details do not match income declaration', time: '14:31:02' },
-  { session: 'AF-7822', type: 'Low Liveness Score', severity: 'high',   desc: 'Face confidence score below threshold (0.61)', time: '14:30:45' },
-  { session: 'AF-7824', type: 'Velocity Flag',      severity: 'medium', desc: '3rd application attempt in 24 hours from same device', time: '14:28:55' },
-  { session: 'AF-7819', type: 'Age Mismatch',       severity: 'medium', desc: 'Estimated age range 45–52, declared 32', time: '14:27:10' },
-  { session: 'AF-7820', type: 'Clear',              severity: 'clear',  desc: 'No fraud signals detected — application clean', time: '14:26:30' },
-];
+
+
+
 
 const statusCfg = {
   approved: { color: '#10B981', bg: 'rgba(16,185,129,0.1)', icon: CheckCircle, label: 'Approved' },
@@ -63,6 +35,40 @@ const sevCfg = {
   medium: { color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  label: 'Medium' },
   clear:  { color: '#10B981', bg: 'rgba(16,185,129,0.1)',  label: 'Clear'  },
 };
+
+
+function useOpsData() {
+  const [sessions, setSessions] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [flags, setFlags] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      const [{data: sData}, {data: eData}, {data: fData}, mData] = await Promise.all([
+        supabase.from('loan_applications').select('*, profiles(name, phone)').order('updated_at', { ascending: false }),
+        supabase.from('application_events').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.from('regulatory_flags').select('*').order('created_at', { ascending: false }),
+        fetchPipelineMetrics()
+      ]);
+      setSessions(sData || []);
+      setEvents(eData || []);
+      setFlags(fData || []);
+      setMetrics(mData);
+    };
+    fetchAll();
+
+    const channel = supabase.channel('ops_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_applications' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'application_events' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'regulatory_flags' }, fetchAll)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  return { sessions, events, flags, metrics };
+}
 
 /* ─── Helpers ────────────────────────────────────────── */
 const stagger = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
@@ -165,7 +171,8 @@ function StatCard({ label, value, icon: Icon, iconColor = '#3B82F6', trend, tren
 }
 
 /* ─── Overview section ───────────────────────────────── */
-function OverviewSection() {
+function OverviewSection({ data }) {
+  const { sessions, events, flags, metrics } = data;
   const transcriptEndRef = useRef(null);
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -178,10 +185,10 @@ function OverviewSection() {
         initial="hidden" animate="visible" variants={stagger}
         className="grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        <StatCard label="Active Sessions" value="1" icon={Radio} iconColor="#3B82F6"
-          trend="1 live now" trendIcon={Radio} trendColor="#3B82F6" />
-        <StatCard label="Fraud Flags" value="0" icon={ShieldCheck} iconColor="#10B981"
-          trend="All clear" trendIcon={CheckCircle} trendColor="#10B981" />
+        <StatCard label="Active Sessions" value={sessions.filter(s => s.status === "live").length} icon={Radio} iconColor="#3B82F6"
+          trend={`${sessions.filter(s => s.status === "live").length} live now`} trendIcon={Radio} trendColor="#3B82F6" />
+        <StatCard label="Fraud Flags" value={flags.filter(f => f.severity === "high").length} icon={ShieldCheck} iconColor="#10B981"
+          trend={flags.filter(f => f.severity === "high").length === 0 ? "All clear" : "Action needed"} trendIcon={CheckCircle} trendColor="#10B981" />
         <StatCard label="Avg Session Time" value="4:32" icon={Clock} iconColor="#8B5CF6"
           trend="12% faster than avg" trendIcon={TrendingDown} trendColor="#10B981" />
         <StatCard label="Offers Accepted" value="3" icon={CheckCircle} iconColor="#10B981"
@@ -219,10 +226,10 @@ function OverviewSection() {
             </div>
 
             <div className="flex-1 overflow-y-auto ops-scroll px-3 py-3 flex flex-col gap-3">
-              {TRANSCRIPT.map((entry, i) => (
+              {events.map((entry, i) => (
                 <motion.div
                   key={i}
-                  initial={{ opacity: 0, x: entry.role === 'ai' ? -8 : 8 }}
+                  initial={{ opacity: 0, x: entry.event === 'ai_response' ? -8 : 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05, duration: 0.3 }}
                   className="flex flex-col gap-0.5"
@@ -231,7 +238,7 @@ function OverviewSection() {
                     <div
                       style={{
                         width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                        background: entry.role === 'ai' ? '#3B82F6' : '#64748B',
+                        background: entry.event === 'ai_response' ? '#3B82F6' : '#64748B',
                       }}
                     />
                     <span
@@ -240,12 +247,12 @@ function OverviewSection() {
                         color: entry.role === 'ai' ? '#3B82F6' : 'var(--text-secondary)',
                       }}
                     >
-                      {entry.name}
+                      {entry.event === 'ai_response' ? 'AI Agent' : 'System/User'}
                     </span>
-                    <span className="ml-auto" style={{ fontSize: 9, color: 'var(--text-muted)' }}>{entry.time}</span>
+                    <span className="ml-auto" style={{ fontSize: 9, color: 'var(--text-muted)' }}>{new Date(entry.created_at).toLocaleTimeString()}</span>
                   </div>
                   <p style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5, paddingLeft: 10 }}>
-                    {entry.msg}
+                    {entry.metadata?.text || entry.event}
                   </p>
                 </motion.div>
               ))}
@@ -283,71 +290,86 @@ function OverviewSection() {
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                <span style={{ fontSize: 10, color: '#3B82F6' }}>LIVE</span>
+                <div className={`w-1.5 h-1.5 rounded-full ${sessions.find(s => s.is_active_session) ? 'bg-blue-400 animate-pulse' : 'bg-slate-500'}`} />
+                <span style={{ fontSize: 10, color: sessions.find(s => s.is_active_session) ? '#3B82F6' : 'var(--text-muted)' }}>
+                  {sessions.find(s => s.is_active_session) ? 'LIVE' : 'STANDBY'}
+                </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto ops-scroll px-4 py-4 flex flex-col gap-4">
               {/* Applicant */}
-              <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>APPLICANT</div>
-                <div className="flex items-center gap-3">
-                  <div
-                    style={{
-                      width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                      background: 'rgba(59,130,246,0.15)', border: '1.5px solid rgba(59,130,246,0.3)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <User size={15} style={{ color: '#3B82F6' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Rahul Sharma</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Session #AF-7824</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Stage progress */}
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>STAGE PROGRESS</div>
-                <div className="flex flex-col gap-2">
-                  {['KYC Extraction', 'Document Verify', 'Loan Offer', 'Consent', 'Complete'].map((s, i) => (
-                    <div key={s} className="flex items-center gap-2.5">
+              {(() => {
+                const latest = sessions[0] || {};
+                return (
+                  <div className="glass-card p-3" style={{ borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>LATEST ACTIVITY</div>
+                    <div className="flex items-center gap-3">
                       <div
                         style={{
-                          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                          background: i < 2 ? 'rgba(16,185,129,0.2)' : i === 2 ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
-                          border: i < 2 ? '1px solid rgba(16,185,129,0.4)' : i === 2 ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                          width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                          background: 'rgba(59,130,246,0.15)', border: '1.5px solid rgba(59,130,246,0.3)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        {i < 2
-                          ? <CheckCircle size={10} style={{ color: '#10B981' }} />
-                          : i === 2
-                            ? <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3B82F6' }} />
-                            : <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#475569' }} />
-                        }
+                        <User size={15} style={{ color: '#3B82F6' }} />
                       </div>
-                      <div
-                        className="flex-1 h-1 rounded-full overflow-hidden"
-                        style={{ background: 'rgba(255,255,255,0.06)' }}
-                      >
-                        <div
-                          style={{
-                            height: '100%',
-                            width: i < 2 ? '100%' : i === 2 ? '40%' : '0%',
-                            background: i < 2 ? '#10B981' : '#3B82F6',
-                            borderRadius: 2,
-                          }}
-                        />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{latest.profiles?.name || 'Waiting for connection...'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{latest.id ? `#${latest.id.slice(0, 8)}` : 'No active sessions'}</div>
                       </div>
-                      <span style={{ fontSize: 11, color: i === 2 ? 'var(--text-primary)' : i < 2 ? '#10B981' : 'var(--text-muted)', minWidth: 80, textAlign: 'right' }}>{s}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stage progress */}
+              {(() => {
+                const latest = sessions[0];
+                if (!latest) return null;
+                const stages = ['kyc', 'bureau', 'offer', 'completed'];
+                const currentIdx = stages.indexOf(latest.application_stage);
+                return (
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>STAGE PROGRESS</div>
+                    <div className="flex flex-col gap-2">
+                      {['KYC Extraction', 'Bureau Check', 'Loan Offer', 'Disbursement'].map((s, i) => (
+                        <div key={s} className="flex items-center gap-2.5">
+                          <div
+                            style={{
+                              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                              background: i < currentIdx ? 'rgba(16,185,129,0.2)' : i === currentIdx ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
+                              border: i < currentIdx ? '1px solid rgba(16,185,129,0.4)' : i === currentIdx ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            {i < currentIdx
+                              ? <CheckCircle size={10} style={{ color: '#10B981' }} />
+                              : i === currentIdx
+                                ? <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3B82F6' }} />
+                                : <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#475569' }} />
+                            }
+                          </div>
+                          <div
+                            className="flex-1 h-1 rounded-full overflow-hidden"
+                            style={{ background: 'rgba(255,255,255,0.06)' }}
+                          >
+                            <div
+                              style={{
+                                height: '100%',
+                                width: i < currentIdx ? '100%' : i === currentIdx ? '40%' : '0%',
+                                background: i < currentIdx ? '#10B981' : '#3B82F6',
+                                borderRadius: 2,
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: 11, color: i === currentIdx ? 'var(--text-primary)' : i < currentIdx ? '#10B981' : 'var(--text-muted)', minWidth: 80, textAlign: 'right' }}>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Session timer */}
               <div className="grid grid-cols-2 gap-3">
@@ -357,30 +379,38 @@ function OverviewSection() {
                 </div>
                 <div className="glass-card p-3" style={{ borderRadius: 10 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>CREDIT SCORE</div>
-                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 700, color: '#10B981' }}>681</div>
+                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 700, color: '#10B981' }}>{sessions[0]?.bureau_score || '0'}</div>
                 </div>
               </div>
 
               {/* Risk gauge */}
-              <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>RISK SCORE</div>
-                <div className="flex items-center justify-between mb-2">
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>Medium</span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>42 / 100</span>
-                </div>
-                <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: '42%' }}
-                    transition={{ duration: 1, ease: 'easeOut', delay: 0.4 }}
-                    style={{ height: '100%', background: 'linear-gradient(to right, #10B981, #F59E0B)', borderRadius: 3 }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Low risk</span>
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>High risk</span>
-                </div>
-              </div>
+              {(() => {
+                const latest = sessions[0] || {};
+                const score = latest.fraud_risk_score || 0;
+                const label = score > 60 ? 'High' : score > 30 ? 'Medium' : 'Low';
+                const color = score > 60 ? '#EF4444' : score > 30 ? '#F59E0B' : '#10B981';
+                return (
+                  <div className="glass-card p-3" style={{ borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>AI RISK SCORE</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span style={{ fontSize: 13, fontWeight: 700, color: color }}>{label}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{score} / 100</span>
+                    </div>
+                    <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${score}%` }}
+                        transition={{ duration: 1, ease: 'easeOut', delay: 0.4 }}
+                        style={{ height: '100%', background: `linear-gradient(to right, #10B981, ${color})`, borderRadius: 3 }}
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Low risk</span>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>High risk</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -448,7 +478,8 @@ function OverviewSection() {
 }
 
 /* ─── Live Sessions ──────────────────────────────────── */
-function LiveSessionsSection() {
+function LiveSessionsSection({ data }) {
+  const { sessions } = data;
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-5">
@@ -486,9 +517,9 @@ function LiveSessionsSection() {
               </tr>
             </thead>
             <tbody>
-              {SESSIONS.map((s, i) => {
-                const sc = statusCfg[s.status];
-                const rc = riskCfg[s.risk];
+              {sessions.map((s, i) => {
+                const sc = statusCfg[s.status] || statusCfg.live;
+                const rc = riskCfg[s.fraud_risk_score > 60 ? 'high' : s.fraud_risk_score > 30 ? 'medium' : 'low'] || riskCfg.low;
                 const SI = sc.icon;
                 return (
                   <motion.tr
@@ -501,23 +532,23 @@ function LiveSessionsSection() {
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
                     <td className="px-5 py-3.5" style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.id}</td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.name}</td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.amount}</td>
+                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.profiles?.name || 'Unknown'}</td>
+                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.metadata?.amount || 'N/A'}</td>
                     <td className="px-5 py-3.5">
-                      <span style={{ fontSize: 13, fontWeight: 700, color: s.score >= 700 ? '#10B981' : s.score >= 650 ? '#F59E0B' : '#EF4444' }}>
-                        {s.score}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: (s.fraud_risk_score||0) < 30 ? '#10B981' : (s.fraud_risk_score||0) < 60 ? '#F59E0B' : '#EF4444' }}>
+                        {s.fraud_risk_score || 'N/A'}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{s.time}</td>
+                    <td className="px-5 py-3.5" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(s.created_at).toLocaleDateString()}</td>
                     <td className="px-5 py-3.5">
                       <span style={{ fontSize: 11, fontWeight: 600, color: rc.color }}>{rc.label}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5">
                         <div style={{ height: 4, width: 60, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${(s.stage / 5) * 100}%`, background: '#3B82F6', borderRadius: 2 }} />
+                          <div style={{ height: '100%', width: `${(['kyc','bureau','offer','completed'].indexOf(s.application_stage) + 1)/4 * 100}%`, background: '#3B82F6', borderRadius: 2 }} />
                         </div>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.stage}/5</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.application_stage}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
@@ -541,7 +572,8 @@ function LiveSessionsSection() {
 }
 
 /* ─── Fraud Signals ──────────────────────────────────── */
-function FraudSignalsSection() {
+function FraudSignalsSection({ data }) {
+  const { flags } = data;
   const distrib = [
     { label: 'No Risk',  count: 28, color: '#10B981' },
     { label: 'Low',      count: 12, color: '#3B82F6'  },
@@ -566,29 +598,50 @@ function FraudSignalsSection() {
       </div>
 
       {/* Distribution */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {distrib.map(d => (
-          <motion.div
-            key={d.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card p-4"
-          >
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>{d.label.toUpperCase()} RISK</div>
-            <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: d.color, marginBottom: 8 }}>
-              {d.count}
-            </div>
-            <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+      {(() => {
+        const counts = { low: 0, medium: 0, high: 0, clear: 0 };
+        sessions.forEach(s => {
+          const score = s.fraud_risk_score || 0;
+          if (score === 0) counts.clear++;
+          else if (score > 60) counts.high++;
+          else if (score > 30) counts.medium++;
+          else counts.low++;
+        });
+
+        const activeDistrib = [
+          { label: 'No Risk',  count: counts.clear,  color: '#10B981' },
+          { label: 'Low',      count: counts.low,    color: '#3B82F6'  },
+          { label: 'Medium',   count: counts.medium, color: '#F59E0B'  },
+          { label: 'High',     count: counts.high,   color: '#EF4444'  },
+        ];
+        const activeTotal = sessions.length || 1;
+
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {activeDistrib.map(d => (
               <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${(d.count / total) * 100}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
-                style={{ height: '100%', background: d.color, borderRadius: 2 }}
-              />
-            </div>
-          </motion.div>
-        ))}
-      </div>
+                key={d.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="glass-card p-4"
+              >
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>{d.label.toUpperCase()} RISK</div>
+                <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: d.color, marginBottom: 8 }}>
+                  {d.count}
+                </div>
+                <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(d.count / activeTotal) * 100}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
+                    style={{ height: '100%', background: d.color, borderRadius: 2 }}
+                  />
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Events table */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="glass-card overflow-hidden">
@@ -598,8 +651,8 @@ function FraudSignalsSection() {
           </span>
         </div>
         <div className="flex flex-col">
-          {FRAUD_SIGNALS.map((f, i) => {
-            const sc = sevCfg[f.severity];
+          {flags.map((f, i) => {
+            const sc = sevCfg[f.severity] || sevCfg.clear;
             return (
               <motion.div
                 key={i}
@@ -617,12 +670,12 @@ function FraudSignalsSection() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{f.type}</span>
-                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{f.session}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{f.flag_type}</span>
+                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{f.application_id}</span>
                   </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{f.desc}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{f.description}</p>
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{f.time}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(f.created_at).toLocaleTimeString()}</span>
               </motion.div>
             );
           })}
@@ -633,16 +686,16 @@ function FraudSignalsSection() {
 }
 
 /* ─── Transcripts section ────────────────────────────── */
-function TranscriptsSection() {
-  const sessions = [
+function TranscriptsSection({ data }) {
+  const { sessions, events } = data;
+  /*
     { id: 'AF-7825', name: 'Priya Sharma',  date: 'Today, 14:10', duration: '2m 41s', status: 'approved', lines: 22 },
     { id: 'AF-7823', name: 'Anita Desai',   date: 'Today, 13:48', duration: '3m 05s', status: 'approved', lines: 18 },
     { id: 'AF-7821', name: 'Sunita Rao',    date: 'Today, 12:30', duration: '3m 50s', status: 'approved', lines: 25 },
     { id: 'AF-7820', name: 'Arjun Patel',   date: 'Today, 11:14', duration: '4m 22s', status: 'approved', lines: 28 },
     { id: 'AF-7819', name: 'Meera Gupta',   date: 'Today, 10:55', duration: '1m 55s', status: 'pending',  lines: 12 },
     { id: 'AF-7822', name: 'Vikram Nair',   date: 'Today, 10:02', duration: '2m 18s', status: 'rejected', lines: 14 },
-  ];
-
+  */
   return (
     <div className="p-6 flex flex-col gap-5">
       <div className="flex items-center justify-between">
@@ -665,7 +718,7 @@ function TranscriptsSection() {
         className="grid grid-cols-1 lg:grid-cols-2 gap-3"
       >
         {sessions.map(s => {
-          const sc = statusCfg[s.status] || statusCfg['approved'];
+          const sc = statusCfg[s.status] || statusCfg.live || statusCfg['approved'];
           const SI = sc.icon;
           return (
             <motion.div
@@ -684,7 +737,7 @@ function TranscriptsSection() {
             >
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{s.name}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{s.profiles?.name || 'Unknown'}</div>
                   <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.id}</div>
                 </div>
                 <span
@@ -695,9 +748,9 @@ function TranscriptsSection() {
                 </span>
               </div>
               <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-                <span>{s.date}</span>
-                <span>{s.duration}</span>
-                <span>{s.lines} lines</span>
+                <span>{new Date(s.created_at).toLocaleString()}</span>
+                <span>Live</span>
+                <span></span>
                 <button
                   className="ml-auto flex items-center gap-1 transition-colors duration-150 hover:text-blue-400"
                   style={{ color: 'var(--text-muted)' }}
@@ -735,6 +788,7 @@ function SessionTimer() {
 /* ─── Main ───────────────────────────────────────────── */
 export default function OpsDashboard() {
   const [active, setActive] = useState('overview');
+  const opsData = useOpsData();
 
   // Prevent body overflow
   useEffect(() => {
@@ -742,11 +796,11 @@ export default function OpsDashboard() {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
-  const sections = {
-    overview:    <OverviewSection />,
-    live:        <LiveSessionsSection />,
-    fraud:       <FraudSignalsSection />,
-    transcripts: <TranscriptsSection />,
+    const sections = {
+    overview:    <OverviewSection data={opsData} />,
+    live:        <LiveSessionsSection data={opsData} />,
+    fraud:       <FraudSignalsSection data={opsData} />,
+    transcripts: <TranscriptsSection data={opsData} />,
   };
 
   return (

@@ -167,7 +167,7 @@ function notify() {
     lastPhaseForTracking = snap.phase;
     const appId = getApplicationId();
     if (appId) {
-      updateResumeCheckpoint(appId, snap.phase.toLowerCase());
+      updateResumeCheckpoint(snap.phase.toLowerCase());
       logApplicationEvent(appId, `phase_transition`, { new_phase: snap.phase });
     }
   }
