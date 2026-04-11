@@ -242,28 +242,68 @@ function extractLoanAmount(text) {
  */
 
 /**
+ * Detect what field the AI's last question was asking about.
+ * This is used to correctly route ambiguous standalone amounts.
+ * @param {string} question
+ * @returns {'loanAmount' | 'income' | 'name' | 'employment' | 'purpose' | null}
+ */
+function detectQuestionContext(question) {
+  if (!question) return null;
+  const q = question.toLowerCase();
+  if (/(loan amount|how much.*loan|loan.*apply|need.*loan|borrow|capital|funding|how much|what amount)/i.test(q)) return 'loanAmount';
+  if (/(income|salary|earn|monthly|per month|how much.*mak|what.*earn)/i.test(q)) return 'income';
+  if (/(your name|what.*name|call you|introduce)/i.test(q)) return 'name';
+  if (/(employ|work|job|occupation|profession|salaried|business)/i.test(q)) return 'employment';
+  if (/(purpose|reason|why.*loan|for what|what.*for)/i.test(q)) return 'purpose';
+  return null;
+}
+
+/**
  * Extract all financial data from text.
  *
  * @param {string} text - User's speech transcription
+ * @param {string} [lastAgentQuestion=''] - Last thing the AI said, used as context hint
  * @returns {ExtractionResult}
  */
-export function extractFinancialData(text) {
+export function extractFinancialData(text, lastAgentQuestion = '') {
   const now = new Date().toISOString();
   const snippet = text.slice(0, 80);
 
-  const nameResult = extractName(text);
-  const incomeResult = extractIncome(text);
-  const loanResult = extractLoanAmount(text);
-  const purposeResult = detectPurpose(text);
+  const nameResult      = extractName(text);
+  const incomeResult    = extractIncome(text);
+  const loanResult      = extractLoanAmount(text);
+  const purposeResult   = detectPurpose(text);
   const employmentResult = detectEmployment(text);
 
+  // ── Context override ──────────────────────────────────
+  // If the AI just asked about a specific field and the user replied with ONLY a standalone
+  // amount (no trigger words), re-route that number to the correct field.
+  const questionContext = detectQuestionContext(lastAgentQuestion);
+  const onlyAmountSpoken = !nameResult.name && !purposeResult.purpose && !employmentResult.employment;
+
+  let finalIncome = incomeResult;
+  let finalLoanAmount = loanResult;
+
+  if (onlyAmountSpoken && questionContext === 'loanAmount' && loanResult.loanAmount === null && incomeResult.income !== null) {
+    // User gave a number, AI asked about loan amount → move income match to loanAmount
+    log('EXTRACTION', 'INFO', `Context override: rerouting ${incomeResult.income} from income → loanAmount (AI asked about loan)`);
+    finalLoanAmount = { loanAmount: incomeResult.income, confidence: 0.82 };
+    finalIncome = { income: null, confidence: 0 };
+  }
+
+  if (onlyAmountSpoken && questionContext === 'income' && incomeResult.income === null && loanResult.loanAmount !== null) {
+    // User gave a number, AI asked about income → move loan match to income
+    log('EXTRACTION', 'INFO', `Context override: rerouting ${loanResult.loanAmount} from loanAmount → income (AI asked about income)`);
+    finalIncome = { income: loanResult.loanAmount, confidence: 0.82 };
+    finalLoanAmount = { loanAmount: null, confidence: 0 };
+  }
+
   const result = {
-    name: { value: nameResult.name, confidence: nameResult.confidence, source: snippet, updatedAt: now },
-    income: { value: incomeResult.income, confidence: incomeResult.confidence, source: snippet, updatedAt: now },
-    loanAmount: { value: loanResult.loanAmount, confidence: loanResult.confidence, source: snippet, updatedAt: now },
-    purpose: { value: purposeResult.purpose, confidence: purposeResult.confidence, source: snippet, updatedAt: now },
-    employment: { value: employmentResult.employment, confidence: employmentResult.confidence, source: snippet, updatedAt: now },
-    age: { value: null, confidence: 0, source: 'video_analysis', updatedAt: now },
+    name:       { value: nameResult.name,             confidence: nameResult.confidence,       source: snippet, updatedAt: now },
+    income:     { value: finalIncome.income,           confidence: finalIncome.confidence,      source: snippet, updatedAt: now },
+    loanAmount: { value: finalLoanAmount.loanAmount,   confidence: finalLoanAmount.confidence,  source: snippet, updatedAt: now },
+    purpose:    { value: purposeResult.purpose,        confidence: purposeResult.confidence,    source: snippet, updatedAt: now },
+    employment: { value: employmentResult.employment,  confidence: employmentResult.confidence, source: snippet, updatedAt: now },
   };
 
   log('EXTRACTION', 'INFO', 'Extracted financial data', {
@@ -272,15 +312,27 @@ export function extractFinancialData(text) {
     loanAmount: result.loanAmount.value,
     purpose: result.purpose.value,
     employment: result.employment.value,
+    context: questionContext || 'none',
   });
 
   return result;
 }
 
 /**
+ * Confidence threshold above which a field is considered "locked".
+ * A locked field will NOT be overwritten unless explicitly corrected by the user
+ * (detected by strictly higher confidence, e.g. 0.95+).
+ */
+const LOCK_THRESHOLD = 0.75;
+
+/**
  * Merge new extraction results with previous state.
- * - Only overwrites a field if the new value is non-null AND has higher or equal confidence.
- * - Tracks update history for traceability.
+ * Rules:
+ *  - If field is empty: always accept.
+ *  - If field confidence < LOCK_THRESHOLD: accept if new confidence >= old confidence.
+ *  - If field confidence >= LOCK_THRESHOLD (LOCKED): only accept if new confidence > LOCK_THRESHOLD + 0.15.
+ *    This prevents re-running the extraction on the full transcript from endlessly
+ *    re-matching noise and overwriting already-confirmed data.
  *
  * @param {ExtractionResult} previous - Existing extracted data
  * @param {ExtractionResult} incoming - Newly extracted data
@@ -294,20 +346,37 @@ export function mergeExtractedData(previous, incoming) {
     const prev = previous[field];
     const next = incoming[field];
 
-    if (next.value === null || next.value === undefined) continue; // no new data
-    if (prev.value === null || next.confidence >= prev.confidence) {
-      // Update if: field was empty OR new confidence >= old confidence
-      if (prev.value !== null && prev.value !== next.value) {
-        changes.push(`${field}: ${prev.value} → ${next.value}`);
-      } else if (prev.value === null) {
-        changes.push(`${field}: (new) ${next.value}`);
-      }
+    // Skip if extraction found nothing
+    if (next.value === null || next.value === undefined) continue;
+
+    // Field is empty — always accept
+    if (prev.value === null) {
       merged[field] = { ...next };
+      changes.push(`${field}: (new) ${next.value}`);
+      continue;
+    }
+
+    // Field is LOCKED (high confidence) — only accept if new extraction is significantly more confident
+    if (prev.confidence >= LOCK_THRESHOLD) {
+      if (next.confidence > LOCK_THRESHOLD + 0.15 && next.value !== prev.value) {
+        merged[field] = { ...next };
+        changes.push(`${field}: OVERRIDE ${prev.value} → ${next.value} (conf ${next.confidence})`);
+      }
+      // Otherwise silently ignore — field stays locked
+      continue;
+    }
+
+    // Field exists but not yet locked — accept if confidence improves
+    if (next.confidence >= prev.confidence && next.value !== prev.value) {
+      merged[field] = { ...next };
+      changes.push(`${field}: ${prev.value} → ${next.value}`);
     }
   }
 
   if (changes.length > 0) {
     log('EXTRACTION', 'INFO', `Merged data — ${changes.length} change(s)`, changes);
+  } else {
+    log('EXTRACTION', 'DEBUG', 'Merge complete — no changes (fields locked or unchanged)');
   }
 
   return { merged, changes };

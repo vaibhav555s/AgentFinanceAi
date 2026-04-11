@@ -7,6 +7,7 @@
 
 import axios from 'axios';
 import { log } from '../utils/logger.js';
+import { getPhase, triggerAadhaarUpload } from '../orchestration/sessionOrchestrator.js';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'llama-3.1-8b-instant';
@@ -28,15 +29,56 @@ export async function generateResponse(transcript, extractedData) {
         return "I am sorry, my connection is currently missing an API key. Please check your config.";
     }
 
-    // Build the system prompt
-    const systemPrompt = `You are a professional, polite, and extremely concise AI Loan Officer working for AgentFinance.
-Your goal is to guide the user to complete their loan application.
-Currently, the system has extracted the following information from the user:
-${JSON.stringify(extractedData, null, 2)}
+    // Check KYC completeness — trigger Aadhaar upload phase if all basic info is collected
+    const currentPhase = getPhase();
+    const hasName = !!(extractedData.name?.value);
+    const hasIncome = !!(extractedData.income?.value);
+    const hasPurpose = !!(extractedData.purpose?.value);
+    const hasAmount = !!(extractedData.loanAmount?.value);
+    const hasEmployment = !!(extractedData.employment?.value);
+    const allBasicInfoDone = hasName && hasIncome && hasPurpose && hasAmount && hasEmployment;
 
-You must ask ONE quick follow up question to get the missing information (if any).
-If all information (Full Name, Age, Employment Type, Monthly Income, Loan Purpose, Requested Amount) is complete, thank them and say you are processing the loan.
-DO NOT use markdown, emojis, or lists. Respond with a single concise sentence.`;
+    if (allBasicInfoDone && currentPhase === 'CHAT') {
+        // Trigger transition to Aadhaar upload
+        triggerAadhaarUpload();
+    }
+
+    // Build a clear picture of what's confirmed vs missing for the LLM
+    const confirmed = [];
+    const missing = [];
+    const fieldMap = {
+        name: 'Full Name',
+        employment: 'Employment Type',
+        income: 'Monthly Income',
+        purpose: 'Loan Purpose',
+        loanAmount: 'Requested Loan Amount',
+    };
+    for (const [key, label] of Object.entries(fieldMap)) {
+        if (extractedData[key]?.value) {
+            confirmed.push(`${label}: ${extractedData[key].value}`);
+        } else {
+            missing.push(label);
+        }
+    }
+
+    // Build the system prompt (phase-aware)
+    const systemPrompt = `You are a professional, polite, and concise AI Loan Officer at AgentFinance India.
+
+Session Phase: ${currentPhase}
+
+ALREADY CONFIRMED (DO NOT ask for these again, they are locked):
+${confirmed.length > 0 ? confirmed.map(f => '- ' + f).join('\n') : '- None yet'}
+
+STILL NEEDED:
+${missing.length > 0 ? missing.map(f => '- ' + f).join('\n') : '- Nothing, all collected!'}
+
+Rules:
+1. NEVER re-ask for anything in the ALREADY CONFIRMED list above.
+2. If STILL NEEDED has items: ask for the FIRST missing item only, in one short sentence.
+3. If STILL NEEDED is empty (all collected): say exactly this: "Thank you! I have everything I need. Please upload your Aadhaar card on the right to verify your identity."
+4. If phase is AADHAAR_UPLOAD, AADHAAR_VERIFY, AADHAAR_DONE, FACE_SCAN, FACE_DONE, or BUREAU: say something brief and encouraging like "Your documents are being verified, please hold on."
+5. If phase is OFFER: say "Based on your profile, here is your personalised loan offer on the right. Would you like to accept?"
+6. Keep ALL responses under 25 words. No markdown, no emojis, no numbered lists.`;
 
     // Build the messages array from the transcript
     const messages = [

@@ -99,10 +99,16 @@ async function runAIPipeline() {
       return;
     }
 
-    // 1. Extract financial data from full text
-    const newExtraction = extractFinancialData(fullText);
+    // 1. Get the last agent question as a context hint.
+    //    This solves: user says "19 lakh" after AI asks "What loan amount?"
+    //    Without context, "19 lakh" looks like income — with context we know it's loanAmount.
+    const transcriptSoFar = getTranscript();
+    const lastAgentMsg = transcriptSoFar.slice().reverse().find(t => t.speaker === 'agent')?.text || '';
 
-    // 2. Merge with existing extracted data (no overwrite, tracks changes)
+    // 2. Extract financial data (context-aware)
+    const newExtraction = extractFinancialData(fullText, lastAgentMsg);
+
+    // 3. Merge with existing extracted data (locked fields won't be overwritten)
     const { merged, changes } = mergeExtractedData(
       currentState.extractedData,
       newExtraction

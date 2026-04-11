@@ -2,650 +2,180 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Mic, MicOff, Video, VideoOff, Lock, User, Shield, Tag,
-  CheckCircle, Star, FileText, Upload, Eye, SlidersHorizontal,
-  Download, ChevronLeft, ChevronRight, ScanFace, CheckCircle2,
-  ShieldCheck, Zap, AlertTriangle, Activity, Cpu, ArrowRight,
-  Fingerprint, Banknote, PhoneOff,
+  Video, VideoOff, Lock, Upload, Download,
+  CheckCircle2, ShieldCheck, Zap, Activity,
+  Fingerprint, ScanFace, Banknote, Mic,
+  AlertTriangle, RefreshCw, User,
 } from 'lucide-react';
 import useAudioCapture from '../hooks/useAudioCapture.js';
 import useAIState from '../hooks/useAIState.js';
-import { processVideoFrame } from '../modules/interaction/liveInteraction.js';
+import {
+  subscribeOrchestrator,
+  getOrchestratorState,
+  triggerAadhaarVerify,
+  updateOffer,
+  triggerConsent,
+  PHASES,
+} from '../modules/orchestration/sessionOrchestrator.js';
 
-
-/* ─── Helpers ────────────────────────────────────────── */
+/* ─── Helpers ─────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
   const r = annualRate / 12 / 100;
   if (r === 0) return Math.round(principal / months);
   return Math.round(principal * r * Math.pow(1 + r, months) / (Math.pow(1 + r, months) - 1));
 }
-
 function fmtINR(n) {
-  return '₹' + n.toLocaleString('en-IN');
+  return '₹' + Number(n).toLocaleString('en-IN');
 }
 
-function formatTime() {
-  return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-/* ─── Premium Styling Constants ──────────────────────── */
-const typography = {
-  fontFamily: "'Inter', -apple-system, sans-serif",
+/* ─── Color Tokens ────────────────────────────────────── */
+const C = {
+  bg: '#080810',
+  panel: '#0A0A12',
+  border: 'rgba(255,255,255,0.07)',
+  borderHi: 'rgba(255,255,255,0.14)',
+  text: '#F8FAFC',
+  textSub: '#94A3B8',
+  textMuted: '#475569',
+  blue: '#3B82F6',
+  green: '#10B981',
+  yellow: '#F59E0B',
+  red: '#EF4444',
 };
 
-const colors = {
-  bgBase: '#000000',
-  bgPanel: '#0A0A0A',
-  border: 'rgba(255,255,255,0.08)',
-  borderHighlight: 'rgba(255,255,255,0.15)',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#A1A1AA',
-  textMuted: '#52525B',
-  accent: '#38BDF8', // Sleek electric blue
-  success: '#34D399',
-  warning: '#EAB308',
-};
-
+/* ─── Progress Steps ──────────────────────────────────── */
 const STEPS = [
-  { icon: Fingerprint, label: 'IDENTIFY' },
-  { icon: ScanFace, label: 'VERIFY' },
-  { icon: Banknote, label: 'STRUCTURE' },
-  { icon: ShieldCheck, label: 'CONSENT' },
-  { icon: CheckCircle2, label: 'DONE' },
+  { phase: PHASES.CHAT,           icon: Fingerprint,  label: 'IDENTIFY' },
+  { phase: PHASES.AADHAAR_UPLOAD, icon: Upload,        label: 'VERIFY' },
+  { phase: PHASES.FACE_SCAN,      icon: ScanFace,      label: 'BIOMETRIC' },
+  { phase: PHASES.OFFER,          icon: Banknote,      label: 'OFFER' },
+  { phase: PHASES.CONSENT,        icon: ShieldCheck,   label: 'CONSENT' },
 ];
 
-/* ─── Typewriter ─────────────────────────────────────── */
-function Typewriter() {
-  const [phraseIdx, setPhraseIdx] = useState(0);
+function phaseToStep(phase) {
+  const order = [
+    PHASES.CHAT,
+    PHASES.AADHAAR_UPLOAD, PHASES.AADHAAR_VERIFY, PHASES.AADHAAR_DONE,
+    PHASES.FACE_SCAN, PHASES.FACE_DONE,
+    PHASES.BUREAU,
+    PHASES.OFFER,
+    PHASES.CONSENT,
+    PHASES.COMPLETE,
+  ];
+  const idx = order.indexOf(phase);
+  if (idx < 1) return 1;
+  if (idx < 4) return 2;
+  if (idx < 6) return 3;
+  if (idx < 8) return 4;
+  return 5;
+}
+
+/* ─── Typewriter ──────────────────────────────────────── */
+function Typewriter({ phase }) {
+  const captions = {
+    [PHASES.CHAT]: ['Listening to your response...', 'Extracting financial data...', 'Analyzing your profile...'],
+    [PHASES.AADHAAR_UPLOAD]: ['Waiting for Aadhaar upload...', 'Document verification ready...'],
+    [PHASES.AADHAAR_VERIFY]: ['Reading Aadhaar document...', 'Fetching identity data...', 'Cross-referencing fields...'],
+    [PHASES.AADHAAR_DONE]: ['Identity verified successfully...', 'Proceeding to biometric check...'],
+    [PHASES.FACE_SCAN]: ['Scanning facial features...', 'Analyzing age from camera...', 'Comparing with document...'],
+    [PHASES.FACE_DONE]: ['Biometric check complete...', 'Running credit assessment...'],
+    [PHASES.BUREAU]: ['Connecting to credit bureau...', 'Pulling credit report...', 'Evaluating eligibility...'],
+    [PHASES.OFFER]: ['Generating personalised offer...', 'Structuring loan terms...'],
+    [PHASES.CONSENT]: ['Capturing verbal consent...', 'Generating audit trail...'],
+    [PHASES.COMPLETE]: ['Session complete. Disbursement queued...'],
+  };
+  const list = captions[phase] || captions[PHASES.CHAT];
+  const [idx, setIdx] = useState(0);
   const [text, setText] = useState('');
   const [charIdx, setCharIdx] = useState(0);
   const [done, setDone] = useState(false);
-  const CAPTIONS = [
-    'Synthesizing financial telemetry...',
-    'Comparing biometric markers...',
-    'Evaluating cryptographic consent...',
-    'Structuring optimal capital layout...',
-  ];
-  const phrase = CAPTIONS[phraseIdx];
+  const phrase = list[idx % list.length];
+
+  useEffect(() => { setIdx(0); setText(''); setCharIdx(0); setDone(false); }, [phase]);
 
   useEffect(() => {
     if (done) {
-      const t = setTimeout(() => {
-        setPhraseIdx(i => (i + 1) % CAPTIONS.length);
-        setText(''); setCharIdx(0); setDone(false);
-      }, 3500);
+      const t = setTimeout(() => { setIdx(i => i + 1); setText(''); setCharIdx(0); setDone(false); }, 3000);
       return () => clearTimeout(t);
     }
     if (charIdx < phrase.length) {
-      const t = setTimeout(() => {
-        setText(phrase.slice(0, charIdx + 1));
-        setCharIdx(c => c + 1);
-      }, 35);
+      const t = setTimeout(() => { setText(phrase.slice(0, charIdx + 1)); setCharIdx(c => c + 1); }, 38);
       return () => clearTimeout(t);
     } else { setDone(true); }
   }, [charIdx, phrase, done]);
 
   return (
-    <div className="flex items-center gap-3">
-      <Activity size={14} style={{ color: colors.accent }} className="animate-pulse" />
-      <span style={{ fontSize: 11, color: colors.textSecondary, letterSpacing: '0.06em', textTransform: 'uppercase', ...typography }}>
+    <div className="flex items-center gap-2">
+      <Activity size={13} style={{ color: C.blue }} className="animate-pulse flex-shrink-0" />
+      <span style={{ fontSize: 11, color: C.textSub, letterSpacing: '0.05em' }}>
         {text}
-        <span
-          className="ml-1.5 inline-block"
-          style={{ width: 4, height: 12, background: colors.accent, verticalAlign: 'middle', animation: 'pulse 1s infinite' }}
-        />
+        <span style={{ display: 'inline-block', width: 3, height: 11, background: C.blue, marginLeft: 3, verticalAlign: 'middle', animation: 'pulse 1s infinite' }} />
       </span>
     </div>
   );
 }
 
-/* ─── Speaking Bars ──────────────────────────────────── */
+/* ─── Speaking Bars ───────────────────────────────────── */
 function SpeakingBars() {
-  const bars = Array.from({ length: 12 });
   return (
-    <div className="flex items-center gap-[4px] h-10">
-      {bars.map((_, i) => (
+    <div className="flex items-center gap-[3px] h-8">
+      {Array.from({ length: 10 }).map((_, i) => (
         <motion.div
           key={i}
-          animate={{ height: [`${20 + Math.random() * 30}%`, `${60 + Math.random() * 40}%`, `${20 + Math.random() * 30}%`] }}
-          transition={{ duration: 0.6 + Math.random() * 0.5, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ width: 3, borderRadius: 999, backgroundColor: colors.accent, opacity: 0.8 }}
+          animate={{ height: [`${20 + Math.random() * 30}%`, `${55 + Math.random() * 45}%`, `${20 + Math.random() * 30}%`] }}
+          transition={{ duration: 0.55 + Math.random() * 0.5, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ width: 3, borderRadius: 999, backgroundColor: C.blue, opacity: 0.85 }}
         />
       ))}
     </div>
   );
 }
 
-/* ─── Confidence Badge ──────────────────────────────── */
+/* ─── Confidence Badge ────────────────────────────────── */
 function ConfBadge({ level }) {
   const cfg = {
-    '99.8%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    '98.5%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    '99.1%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    '94.2%': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
-    '97.0%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    '99.9%': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    'High': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
-    'Medium': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
-    'Low': { color: '#EF4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
-  }[level] || { color: '#64748B', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.25)' };
+    High: { color: C.green, bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
+    Medium: { color: C.yellow, bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
+    Low: { color: C.red, bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
+  }[level] || { color: C.textMuted, bg: 'rgba(71,85,105,0.12)', border: 'rgba(71,85,105,0.25)' };
   return (
-    <span
-      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
-      style={{ color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}
-    >
+    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`, flexShrink: 0 }}>
       {level}
     </span>
   );
 }
 
-
-/* ─── Stage 1 — KYC ──────────────────────────────────── */
-function Stage1KYC() {
-  const { extractedData } = useAIState();
-  const [visible, setVisible] = useState(0);
-
-  const displayValue = (val) => val === null || val === undefined ? 'Pending...' : val;
-
-  const KYC_FIELDS = [
-    { label: 'PRIMARY APPLICANT', value: displayValue(extractedData.name.value), conf: (extractedData.name.confidence * 100).toFixed(1) + '%' },
-    { label: 'AGE (VIDEO ESTIMATE)', value: extractedData.age.value ? `${extractedData.age.value} Years` : 'Analyzing Video...', conf: (extractedData.age.confidence * 100).toFixed(1) + '%' },
-    { label: 'EMPLOYMENT STATUS', value: displayValue(extractedData.employment.value), conf: (extractedData.employment.confidence * 100).toFixed(1) + '%' },
-    { label: 'VERIFIED INCOME', value: extractedData.income.value ? fmtINR(extractedData.income.value) : 'Pending...', conf: (extractedData.income.confidence * 100).toFixed(1) + '%' },
-    { label: 'PURPOSE OF LOAN', value: displayValue(extractedData.purpose.value), conf: (extractedData.purpose.confidence * 100).toFixed(1) + '%' },
-    { label: 'REQUESTED CAPITAL', value: extractedData.loanAmount.value ? fmtINR(extractedData.loanAmount.value) : 'Pending...', conf: (extractedData.loanAmount.confidence * 100).toFixed(1) + '%' },
-  ];
-
-  useEffect(() => {
-    if (visible < KYC_FIELDS.length) {
-      const t = setTimeout(() => setVisible(v => v + 1), 420);
-      return () => clearTimeout(t);
-    }
-  }, [visible]);
-
-  return (
-    <div className="p-4 flex flex-col gap-3">
-      <div className="flex items-center gap-2 mb-1">
-        <h3 className="text-sm font-semibold" style={{ fontFamily: 'Sora, sans-serif', color: 'var(--text-primary)' }}>
-          Extracting Profile
-        </h3>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6' }}
-        />
-      </div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>AI is analyzing your responses...</p>
-
-      <div className="flex flex-col gap-2">
-        {KYC_FIELDS.map((f, i) => (
-          <AnimatePresence key={f.label}>
-            {i < visible && (
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                className="flex items-center justify-between p-3.5 transition-colors duration-200"
-                style={{
-                  borderRadius: 10,
-                  background: 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${colors.border}`
-                }}
-              >
-                <div className="flex flex-col min-w-0">
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{f.label}</span>
-                  <span className="font-semibold truncate" style={{ fontSize: 13, color: 'var(--text-primary)', marginTop: 1 }}>{f.value}</span>
-                </div>
-                <ConfBadge level={f.conf} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        ))}
-      </div>
-
-      {visible >= KYC_FIELDS.length && (
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 4 }}
-        >
-          Low confidence fields will be re-confirmed
-        </motion.p>
-      )}
-    </div>
-  );
-}
-
-/* ─── File Upload Zone ───────────────────────────────── */
-function UploadZone({ label, file, onFile }) {
-  const inputRef = useRef(null);
-  return (
-    <div
-      className="flex flex-col items-center gap-3 p-5 cursor-pointer transition-all duration-300"
-      style={{
-        borderRadius: 12,
-        border: file ? `1px solid ${colors.success}` : `1px dashed ${colors.borderHighlight}`,
-        background: file ? 'rgba(52, 211, 153, 0.05)' : 'rgba(255,255,255,0.01)',
-      }}
-      onClick={() => inputRef.current?.click()}
-      onDragOver={e => e.preventDefault()}
-      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
-    >
-      <input ref={inputRef} type="file" className="hidden" onChange={e => onFile(e.target.files[0])} />
-      {file ? (
-        <>
-          <CheckCircle2 size={20} style={{ color: colors.success }} />
-          <span style={{ fontSize: 12, fontWeight: 500, color: colors.success }}>{file.name}</span>
-        </>
-      ) : (
-        <>
-          <Upload size={18} style={{ color: colors.textSecondary }} />
-          <div className="flex flex-col items-center gap-1 text-center">
-            <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.03em' }}>{label}</span>
-            <span style={{ fontSize: 10, color: colors.textMuted }}>Tap or drag to upload</span>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ─── Stage 2: Biometric Verification ────────────────── */
-function Stage2Verify() {
-  const { extractedData } = useAIState();
-  const age = extractedData.age.value;
-
-  return (
-    <div className="p-6 flex flex-col gap-5" style={typography}>
-      <div className="flex flex-col gap-2">
-        <h3 className="text-xl font-bold" style={{ color: colors.textPrimary, letterSpacing: '-0.02em' }}>
-          Verification
-        </h3>
-        <p style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
-          Our AI is analyzing biometric patterns to confirm your identity and age.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <AnimatePresence mode="wait">
-          {age ? (
-            <motion.div
-              key="match"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-5 flex flex-col items-center gap-4 text-center"
-              style={{ background: 'rgba(52, 211, 153, 0.05)', borderRadius: 16, border: '1px solid rgba(52, 211, 153, 0.2)' }}
-            >
-              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.4)' }}>
-                <ScanFace size={32} style={{ color: colors.success }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: colors.success, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>BIOMETRIC MATCH</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: colors.textPrimary }}>{age} Years</div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="waiting"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="p-8 flex flex-col items-center gap-4 text-center border-2 border-dashed"
-              style={{ borderColor: 'rgba(56, 189, 248, 0.2)', borderRadius: 16, background: 'rgba(56, 189, 248, 0.02)' }}
-            >
-              <Activity size={32} style={{ color: colors.accent }} className="animate-pulse" />
-              <div style={{ fontSize: 13, color: colors.textSecondary }}>Waiting for visual demographic confirmation...</div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Age verification details */}
-      <div className="p-5" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
-        <div className="flex items-center gap-2 mb-4">
-          <ScanFace size={14} style={{ color: colors.accent }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Demographic Check
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.08em' }}>ESTIMATED AGE</span>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.textPrimary }}>
-              {age ? `${age}–${age + 3} Years` : 'Scanning...'}
-            </span>
-          </div>
-          <div className="h-6 w-px" style={{ background: colors.border }} />
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: 11, color: colors.textSecondary }}>Threshold Match</span>
-            <div className="px-2 py-0.5 rounded" style={{ background: age ? 'rgba(52, 211, 153, 0.1)' : 'rgba(255,255,255,0.05)', color: age ? colors.success : colors.textMuted, fontSize: 10, fontWeight: 600 }}>
-              {age ? '✓ VERIFIED' : 'PENDING'}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Stage 3: Capital Structuring (Offer) ───────────── */
-function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept }) {
-  const { extractedData } = useAIState();
-  const emi = calcEMI(loanAmount, 12, tenure);
-  const minLoan = 100000;
-  const maxLoan = 500000;
-
-  // Set initial loan amount from AI extraction if not set
-  useEffect(() => {
-    if (extractedData.loanAmount.value && loanAmount === 250000) {
-      setLoanAmount(extractedData.loanAmount.value);
-    }
-  }, [extractedData.loanAmount.value]);
-
-  const loanFill = ((loanAmount - minLoan) / (maxLoan - minLoan)) * 100;
-  const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
-
-  return (
-    <div className="p-6 flex flex-col gap-6" style={typography}>
-      {/* Primary Offer Card */}
-      <div
-        className="relative overflow-hidden p-6"
-        style={{
-          background: 'linear-gradient(180deg, rgba(20,20,20,0.8) 0%, rgba(10,10,10,0.9) 100%)',
-          borderRadius: 16,
-          border: `1px solid ${colors.borderHighlight}`,
-          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
-        }}
-      >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-[#38BDF8] opacity-10 blur-[50px] rounded-full pointer-events-none" />
-
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-5" style={{ borderRadius: 6, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-          <Zap size={10} style={{ color: colors.accent }} />
-          <span style={{ fontSize: 9, fontWeight: 700, color: colors.accent, letterSpacing: '0.1em' }}>OPTIMIZED STRUCTURE</span>
-        </div>
-
-        <div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 4 }}>APPROVED CAPITAL</div>
-        <motion.div
-          key={loanAmount}
-          initial={{ opacity: 0.8, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ fontSize: 36, fontWeight: 700, color: colors.textPrimary, letterSpacing: '-0.03em', marginBottom: 24 }}
-        >
-          {fmtINR(loanAmount)}
-        </motion.div>
-
-        <div className="flex items-center justify-between pt-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-          <div>
-            <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 4 }}>MONTHLY OBLIGATION (EMI)</div>
-            <motion.div key={emi} initial={{ opacity: 0.8 }} animate={{ opacity: 1 }} style={{ fontSize: 22, fontWeight: 600, color: colors.textPrimary, letterSpacing: '-0.02em' }}>
-              {fmtINR(emi)} <span style={{ fontSize: 13, color: colors.textSecondary, fontWeight: 400 }}>/ mo</span>
-            </motion.div>
-          </div>
-          <div className="text-right">
-            <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 4 }}>TENURE</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: colors.textPrimary, letterSpacing: '-0.02em' }}>
-              {tenure} <span style={{ fontSize: 13, color: colors.textSecondary, fontWeight: 400 }}>mos</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Adjustment Sliders */}
-      <div className="p-5" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
-        <div className="flex items-center gap-2 mb-6">
-          <SlidersHorizontal size={14} style={{ color: colors.accent }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Parameters</span>
-        </div>
-
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-3">
-            <span style={{ fontSize: 11, color: colors.textSecondary, fontWeight: 500 }}>Capital Required</span>
-            <span style={{ fontSize: 12, color: colors.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtINR(loanAmount)}</span>
-          </div>
-          <input
-            type="range" min={minLoan} max={maxLoan} step={10000} value={loanAmount} onChange={e => setLoanAmount(Number(e.target.value))}
-            className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer"
-            style={{ background: `linear-gradient(to right, ${colors.accent} 0%, ${colors.accent} ${loanFill}%, rgba(255,255,255,0.1) ${loanFill}%, rgba(255,255,255,0.1) 100%)` }}
-          />
-        </div>
-
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <span style={{ fontSize: 11, color: colors.textSecondary, fontWeight: 500 }}>Duration</span>
-            <span style={{ fontSize: 12, color: colors.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{tenure} mos</span>
-          </div>
-          <input
-            type="range" min={minTenure} max={maxTenure} step={6} value={tenure} onChange={e => setTenure(Number(e.target.value))}
-            className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer"
-            style={{ background: `linear-gradient(to right, ${colors.accent} 0%, ${colors.accent} ${tenureFill}%, rgba(255,255,255,0.1) ${tenureFill}%, rgba(255,255,255,0.1) 100%)` }}
-          />
-        </div>
-      </div>
-
-      <motion.button
-        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
-        onClick={onAccept}
-        className="w-full py-4 flex items-center justify-center gap-2 font-semibold transition-all"
-        style={{
-          background: colors.textPrimary, color: colors.bgBase, borderRadius: 10, fontSize: 13, letterSpacing: '0.02em', border: 'none', cursor: 'pointer',
-          boxShadow: '0 4px 14px rgba(255,255,255,0.15)'
-        }}
-      >
-        LOCK STRUCTURE & PROCEED <ArrowRight size={14} />
-      </motion.button>
-    </div>
-  );
-}
-
-/* ─── Stage 4 — Consent ──────────────────────────────── */
-function Stage4Consent({ token, onComplete }) {
-  const { consent } = useAIState();
-  const hash = consent.locked ? 'a3f9bc2e847d1c6f4b8e2d9a7c3f1b5e9d2c8a4f7b1e6c3d9a5f2b8e4d7c1a3f' : 'WAITING_FOR_HASH_GEN...';
-  const timestamp = consent.timestamp ? new Date(consent.timestamp).toLocaleTimeString() : 'Pending';
-
-  function downloadConsent() {
-    if (!consent.locked) return;
-    const blob = new Blob([
-      `CONSENT TRAIL — AgentFinance AI\n\nSession: ${token}\nTimestamp: ${timestamp}\n\n` +
-      `Consent Phrase: "${consent.phrase}"\n\n` +
-      `SHA-256 Hash: ${hash}\n\nTamper-evident record. Do not modify.`
-    ], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `consent-audit-${token}.txt`; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="p-6 flex flex-col gap-5" style={typography}>
-      <div className="flex items-center gap-2 mb-2">
-        <Mic size={16} style={{ color: colors.accent }} />
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          Vocal Signature Analysis
-        </h3>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-card p-4"
-        style={{
-          borderRadius: 12,
-          borderLeft: `3px solid ${consent.locked ? colors.success : colors.accent}`,
-          background: consent.locked ? 'rgba(52, 211, 153, 0.03)' : 'rgba(255,255,255,0.01)'
-        }}
-      >
-        <div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', marginBottom: 8 }}>
-          {consent.locked ? 'VERIFIED CONSENT PHRASE' : 'LISTENING FOR CONSENT...'}
-        </div>
-        <p className="text-sm leading-relaxed" style={{ color: colors.textPrimary, fontStyle: 'italic', marginBottom: 8 }}>
-          {consent.phrase ? `"${consent.phrase}"` : '"Please state your agreement to the terms..."'}
-        </p>
-        <div style={{ fontSize: 11, color: colors.textMuted }}>
-          {consent.locked ? `Captured at ${timestamp}` : 'Signal processing active...'}
-        </div>
-      </motion.div>
-
-      {consent.locked ? (
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col gap-4">
-          <div className="glass-card p-4" style={{ borderRadius: 12 }}>
-            <div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', marginBottom: 6 }}>CONSENT HASH (SHA-256)</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#94A3B8', wordBreak: 'break-all', marginBottom: 8 }}>{hash}</div>
-            <div className="flex items-center gap-1.5"><ShieldCheck size={12} style={{ color: colors.success }} /><span style={{ fontSize: 11, color: colors.success }}>Records anchored</span></div>
-          </div>
-
-          <button
-            onClick={onComplete}
-            className="w-full py-4 flex items-center justify-center gap-2 font-semibold"
-            style={{ background: colors.success, color: colors.bgBase, borderRadius: 10, fontSize: 13, cursor: 'pointer' }}
-          >
-            EXECUTE DISBURSEMENT <ArrowRight size={14} />
-          </button>
-        </motion.div>
-      ) : (
-        <div className="flex flex-col items-center gap-4 p-8 text-center border-2 border-dashed" style={{ borderColor: 'rgba(255,255,255,0.05)', borderRadius: 16 }}>
-          <Activity size={32} style={{ color: colors.accent }} className="animate-pulse" />
-          <span style={{ fontSize: 12, color: colors.textSecondary }}>Waiting for vocal affirmation to seal the contract.</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Stage 5: Completion ────────────────────────────── */
-function Stage5Complete({ token, loanAmount, tenure }) {
-  const navigate = useNavigate();
-  const emi = calcEMI(loanAmount, 12, tenure);
-
-  return (
-    <div className="p-8 flex flex-col gap-6 items-center text-center" style={typography}>
-      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", duration: 0.8 }} className="w-20 h-20 rounded-full flex items-center justify-center mb-2" style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.3)', boxShadow: '0 0 40px rgba(52, 211, 153, 0.2)' }}>
-        <CheckCircle2 size={36} style={{ color: colors.success }} />
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <h3 style={{ fontSize: 22, fontWeight: 700, color: colors.textPrimary, letterSpacing: '-0.02em', marginBottom: 8 }}>Execution Complete</h3>
-        <p style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>Capital layout optimized. Funds are queued for instantaneous transfer.</p>
-      </motion.div>
-
-      {/* Summary card */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.25 }}
-        className="glass-card w-full"
-        style={{ borderRadius: 12, padding: '14px 16px' }}
-      >
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'AMOUNT', value: fmtINR(loanAmount) },
-            { label: 'EMI', value: `${fmtINR(emi)}/mo` },
-            { label: 'TENURE', value: `${tenure} mo` },
-          ].map(item => (
-            <div key={item.label} className="flex flex-col items-center gap-1">
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>{item.label}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{item.value}</span>
-            </div>
-          ))}
-        </div>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="flex flex-col gap-1 w-full text-center mt-2">
-        <span style={{ fontSize: 10, color: colors.textMuted, fontFamily: 'monospace' }}>TOKEN: {token || 'TKN-8A4F-992B'}</span>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="flex flex-col gap-3 w-full mt-4">
-        <button className="w-full py-4 flex items-center justify-center gap-2 font-semibold transition-all bg-white text-black hover:bg-gray-100" style={{ borderRadius: 10, fontSize: 12, letterSpacing: '0.02em', cursor: 'pointer' }}>
-          VIEW DASHBOARD
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
-
-
-/* ─── Video Analysis Hook ─────────────────────── */
-function useVideoAnalysis(active, videoRef) {
-  useEffect(() => {
-    if (!active || !videoRef.current) return;
-
-    const canvas = document.createElement('canvas');
-    let intervalId = null;
-
-    const capture = () => {
-      const video = videoRef.current;
-      if (video && video.readyState >= 2) {
-        console.log('[VIDEO_ANALYSIS] Capturing frame from live stream...');
-        canvas.width = 640;
-        canvas.height = 480;
-        const ctx = canvas.getContext('2d');
-        // Handle mirrored local preview if necessary, but for analysis raw is fine
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL('image/jpeg', 0.8);
-        processVideoFrame(base64);
-      }
-    };
-
-    // First capture after 3s, then every 12s
-    const startTimeout = setTimeout(capture, 3000);
-    intervalId = setInterval(capture, 12000);
-
-    return () => {
-      clearTimeout(startTimeout);
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [active, videoRef]);
-}
-
-/* ─── Camera Frame ────────────────────────────── */
-function CameraFrame({ isVideoOn, videoRef, onCameraReady }) {
+/* ─── Camera Frame ────────────────────────────────────── */
+function CameraFrame({ isVideoOn, onCameraReady }) {
+  const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
 
-  // We ask for media once, and toggle tracks on/off when props change
   useEffect(() => {
-    let activeStream = null;
-
+    let active = null;
     if (isVideoOn) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(s => {
-          activeStream = s;
-          setStream(s);
+          active = s; setStream(s);
           if (videoRef.current) videoRef.current.srcObject = s;
           onCameraReady?.();
         })
-        .catch(err => {
-          console.error("Camera access denied or unavailable", err);
-          onCameraReady?.(); // Trigger continue anyway
-        });
+        .catch(() => onCameraReady?.());
     } else {
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-        setStream(null);
-      }
+      stream?.getTracks().forEach(t => t.stop());
+      setStream(null);
       onCameraReady?.();
     }
-
-    return () => {
-      if (activeStream) {
-        activeStream.getTracks().forEach(t => t.stop());
-      }
-    };
+    return () => active?.getTracks().forEach(t => t.stop());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideoOn]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1, backgroundColor: '#0D0D14' }}>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{
-          width: '100%', height: '100%', objectFit: 'cover',
-          opacity: isVideoOn && stream ? 1 : 0, transition: 'opacity 0.5s ease',
-          transform: 'scaleX(-1)', // Local preview mirror
-        }}
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1, background: '#0D0D14' }}>
+      <video ref={videoRef} autoPlay playsInline muted
+        style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isVideoOn && stream ? 1 : 0, transition: 'opacity 0.5s', transform: 'scaleX(-1)' }}
       />
       {(!isVideoOn || !stream) && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <VideoOff size={48} style={{ color: 'rgba(255,255,255,0.1)' }} />
         </div>
       )}
@@ -653,323 +183,773 @@ function CameraFrame({ isVideoOn, videoRef, onCameraReady }) {
   );
 }
 
+/* ─── Face Scan Overlay ───────────────────────────────── */
+function FaceScanOverlay({ overlay }) {
+  if (!overlay) return null;
+  return (
+    <AnimatePresence>
+      <motion.div
+        key={overlay}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      >
+        {overlay === 'scanning' && (
+          <>
+            {/* Scanning frame */}
+            <div style={{ position: 'relative', width: 180, height: 200 }}>
+              {/* Corner brackets */}
+              {[{ top: 0, left: 0, borderRadius: '8px 0 0 0' }, { top: 0, right: 0, borderRadius: '0 8px 0 0' }, { bottom: 0, left: 0, borderRadius: '0 0 0 8px' }, { bottom: 0, right: 0, borderRadius: '0 0 8px 0' }].map((pos, i) => (
+                <div key={i} style={{ position: 'absolute', width: 24, height: 24, borderTop: i < 2 ? `2px solid ${C.blue}` : 'none', borderBottom: i >= 2 ? `2px solid ${C.blue}` : 'none', borderLeft: i % 2 === 0 ? `2px solid ${C.blue}` : 'none', borderRight: i % 2 === 1 ? `2px solid ${C.blue}` : 'none', ...pos }} />
+              ))}
+              {/* Scan line */}
+              <motion.div
+                animate={{ top: ['10%', '90%', '10%'] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ position: 'absolute', left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${C.blue}, transparent)`, boxShadow: `0 0 12px ${C.blue}` }}
+              />
+              {/* Face dots */}
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ScanFace size={60} style={{ color: `rgba(59,130,246,0.3)` }} />
+              </div>
+            </div>
+            <motion.p animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ fontSize: 13, color: C.blue, fontWeight: 600, letterSpacing: '0.08em' }}>
+              SCANNING FACE...
+            </motion.p>
+            <p style={{ fontSize: 11, color: C.textSub }}>Analysing biometric markers from camera</p>
+          </>
+        )}
 
-/* ─── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ isVideoOn, setIsVideoOn, isListening, micError, isProcessing, startRecording, stopRecording, onJoined, videoRef }) {
-  const [callJoined, setCallJoined] = useState(false);
+        {overlay === 'scan_success' && (
+          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center gap-3">
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', border: `2px solid ${C.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 30px rgba(16,185,129,0.3)` }}>
+              <CheckCircle2 size={36} style={{ color: C.green }} />
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.green }}>Age Matched ✓</p>
+            <p style={{ fontSize: 11, color: C.textSub }}>Camera age matches Aadhaar document</p>
+          </motion.div>
+        )}
+
+        {overlay === 'scan_fail' && (
+          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center gap-3">
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', border: `2px solid ${C.red}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={36} style={{ color: C.red }} />
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.red }}>Age Mismatch Flagged</p>
+            <p style={{ fontSize: 11, color: C.textSub }}>Session flagged for manual review</p>
+          </motion.div>
+        )}
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+/* ─── Left Panel ──────────────────────────────────────── */
+function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRecording, stopRecording, phase, leftOverlay, onJoined }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
 
   useEffect(() => {
-    const handleStart = () => setIsAiSpeaking(true);
-    const handleEnd = () => setIsAiSpeaking(false);
-    window.addEventListener('ai_speaking_start', handleStart);
-    window.addEventListener('ai_speaking_end', handleEnd);
-    return () => {
-      window.removeEventListener('ai_speaking_start', handleStart);
-      window.removeEventListener('ai_speaking_end', handleEnd);
-    };
+    const onStart = () => setIsAiSpeaking(true);
+    const onEnd = () => setIsAiSpeaking(false);
+    window.addEventListener('ai_speaking_start', onStart);
+    window.addEventListener('ai_speaking_end', onEnd);
+    return () => { window.removeEventListener('ai_speaking_start', onStart); window.removeEventListener('ai_speaking_end', onEnd); };
   }, []);
 
   return (
-    <div
-      className="relative flex flex-col"
-      style={{
-        flex: '0 0 65%',
-        background: 'radial-gradient(ellipse at 50% 50%, #0F1628 0%, #0D0D14 60%, #080810 100%)',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Local Camera embed — fills entire panel */}
-      <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-        <CameraFrame
-          isVideoOn={isVideoOn}
-          videoRef={videoRef}
-          onCameraReady={() => { setCallJoined(true); onJoined?.(); }}
-        />
+    <div className="relative flex flex-col" style={{ flex: '0 0 62%', background: 'radial-gradient(ellipse at 50% 40%, #0F1628 0%, #0A0A14 60%, #060610 100%)', borderRight: `1px solid ${C.border}`, overflow: 'hidden' }}>
+      {/* Camera — pointer-events none so it never blocks button clicks */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
+        <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} />
       </div>
 
-      {/* Live badge — always on top */}
-      <div className="absolute top-4 left-4 flex items-center gap-1.5 glass-pill px-3 py-1.5" style={{ zIndex: 20 }}>
-        <span
-          style={{
-            width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0,
-            boxShadow: '0 0 8px rgba(239,68,68,0.8)',
-            animation: 'pulseGlow 1.5s ease-in-out infinite',
-          }}
-        />
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', letterSpacing: '0.1em' }}>LIVE</span>
+      {/* Face scan overlay — only captures events when actively shown */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 15, pointerEvents: leftOverlay ? 'auto' : 'none' }}>
+        <FaceScanOverlay overlay={leftOverlay} />
       </div>
 
-      {/* Secure badge */}
-      <div className="absolute top-4 right-4 flex items-center gap-1.5 glass-pill px-3 py-1.5 z-10">
-        <Lock size={11} style={{ color: '#10B981' }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#10B981', letterSpacing: '0.06em' }}>SECURE SESSION</span>
+      {/* Top badges */}
+      <div className="absolute top-4 left-4 flex items-center gap-1.5 z-20" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', borderRadius: 999, padding: '4px 12px', border: '1px solid rgba(239,68,68,0.3)' }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.red, flexShrink: 0, boxShadow: `0 0 8px ${C.red}`, animation: 'pulseGlow 1.5s ease-in-out infinite' }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.red, letterSpacing: '0.1em' }}>LIVE</span>
+      </div>
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', borderRadius: 999, padding: '4px 12px', border: '1px solid rgba(16,185,129,0.3)' }}>
+        <Lock size={11} style={{ color: C.green }} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: C.green, letterSpacing: '0.06em' }}>SECURE</span>
       </div>
 
-      {/* Center content */}
-      <div
-        className="flex-1 flex flex-col items-center justify-center gap-4 px-4"
-        style={{
-          position: 'relative',
-          zIndex: 2,
-        }}
-      >
-        {/* Ambient glow ring behind avatar */}
+      {/* Center AI avatar + controls */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-4" style={{ position: 'relative', zIndex: 5 }}>
+        {/* Glow + Avatar */}
         <div style={{ position: 'relative' }}>
           <motion.div
-            animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            style={{
-              position: 'absolute', inset: -16, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(59,130,246,0.25) 0%, transparent 70%)',
-              filter: 'blur(12px)',
-            }}
+            animate={{ scale: [1, 1.12, 1], opacity: [0.25, 0.55, 0.25] }}
+            transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ position: 'absolute', inset: -20, borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,0.3) 0%, transparent 70%)', filter: 'blur(16px)' }}
           />
-          {/* Avatar */}
-          <div
-            style={{
-              width: 120, height: 120, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.04)',
-              backdropFilter: 'blur(24px)',
-              border: '2px solid rgba(59,130,246,0.5)',
-              boxShadow: '0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(59,130,246,0.15)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', zIndex: 1,
-            }}
-          >
-            <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 32, fontWeight: 700, color: '#3B82F6' }}>AI</span>
+          <div style={{ width: 110, height: 110, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(24px)', border: `2px solid rgba(59,130,246,0.5)`, boxShadow: `0 0 28px rgba(59,130,246,0.35), 0 0 56px rgba(59,130,246,0.12)`, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+            <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: C.blue }}>AI</span>
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-3 transition-opacity duration-300">
+        {/* Status text */}
+        <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-2">
-            {!isAiSpeaking && isListening && <div className="w-2 h-2 rounded-full" style={{ background: '#F87171', boxShadow: '0 0 10px #F87171', animation: 'pulse 1.5s infinite' }} />}
-            <span style={{ fontSize: 16, fontFamily: 'Sora, sans-serif', color: isAiSpeaking ? '#38BDF8' : (isListening ? '#F87171' : '#F8FAFC'), fontWeight: 600, transition: 'color 0.3s' }}>
-              {isAiSpeaking ? "AI Officer is Speaking..." : isListening ? "Recording your response..." : "Ready for your response..."}
+            {!isAiSpeaking && isListening && (
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F87171', boxShadow: '0 0 10px #F87171', animation: 'pulse 1.5s infinite', flexShrink: 0 }} />
+            )}
+            <span style={{ fontSize: 15, fontFamily: 'Sora, sans-serif', color: isAiSpeaking ? C.blue : isListening ? '#F87171' : C.text, fontWeight: 600, transition: 'color 0.3s' }}>
+              {isAiSpeaking ? 'AI Officer is Speaking...' : isListening ? 'Recording your response...' : 'Ready for your response...'}
             </span>
           </div>
+
           <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {isAiSpeaking ? <SpeakingBars /> : (
               <button
                 disabled={isAiSpeaking || isProcessing}
                 onClick={isListening ? stopRecording : startRecording}
-                className="px-6 py-2 rounded-full transition-all duration-200"
                 style={{
-                  background: isListening ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.1)',
-                  border: isListening ? '1px solid rgba(248,113,113,0.5)' : '1px solid rgba(255,255,255,0.2)',
-                  color: isListening ? '#F87171' : '#FFF',
-                  fontWeight: 600,
-                  fontSize: 13,
+                  padding: '8px 24px', borderRadius: 999, fontWeight: 600, fontSize: 13,
+                  background: isListening ? 'rgba(248,113,113,0.18)' : 'rgba(255,255,255,0.08)',
+                  border: `1px solid ${isListening ? 'rgba(248,113,113,0.5)' : 'rgba(255,255,255,0.18)'}`,
+                  color: isListening ? '#F87171' : C.text,
                   cursor: isAiSpeaking || isProcessing ? 'not-allowed' : 'pointer',
-                  opacity: isAiSpeaking || isProcessing ? 0.5 : 1,
-                  boxShadow: isListening ? '0 0 15px rgba(248,113,113,0.3)' : 'none'
+                  opacity: isAiSpeaking || isProcessing ? 0.45 : 1,
+                  boxShadow: isListening ? '0 0 18px rgba(248,113,113,0.25)' : 'none',
+                  transition: 'all 0.2s',
                 }}
               >
-                {isProcessing ? "Processing..." : isListening ? "Tap to Stop & Send" : "Tap to Speak"}
+                {isProcessing ? 'Processing...' : isListening ? 'Tap to Stop & Send' : 'Tap to Speak'}
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Caption bar */}
-      <div
-        className="flex items-center justify-between gap-3 px-4 py-3"
-        style={{
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          flexShrink: 0,
-        }}
-      >
+      {/* Bottom caption bar */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(20px)', borderTop: `1px solid ${C.border}`, flexShrink: 0, zIndex: 10 }}>
         <div className="flex-1 min-w-0">
-          <Typewriter />
+          <Typewriter phase={phase} />
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setIsVideoOn(v => !v)}
-            className="flex items-center gap-1.5 glass-pill px-3 py-2 transition-all duration-150"
-            style={{
-              border: isVideoOn ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.1)',
-              boxShadow: isVideoOn ? '0 0 12px rgba(59,130,246,0.25)' : 'none',
-            }}
-          >
-            {isVideoOn
-              ? <Video size={13} style={{ color: '#3B82F6' }} />
-              : <VideoOff size={13} style={{ color: '#475569' }} />
-            }
-          </button>
-        </div>
+        <button
+          onClick={() => setIsVideoOn(v => !v)}
+          style={{ padding: '6px 12px', borderRadius: 999, border: `1px solid ${isVideoOn ? 'rgba(59,130,246,0.4)' : C.border}`, background: 'rgba(0,0,0,0.4)', boxShadow: isVideoOn ? '0 0 12px rgba(59,130,246,0.2)' : 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', transition: 'all 0.2s' }}
+        >
+          {isVideoOn ? <Video size={13} style={{ color: C.blue }} /> : <VideoOff size={13} style={{ color: C.textMuted }} />}
+        </button>
       </div>
     </div>
   );
 }
 
-/* ─── Right Panel ────────────────────────────────────── */
-function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanAmount, tenure, setTenure }) {
-  function handleAcceptOffer() { setCurrentStage(4); }
+/* ══════════════════════════════════════════════════════════
+   RIGHT PANEL COMPONENTS
+══════════════════════════════════════════════════════════ */
+
+/* ─── Phase: CHAT — Dynamic KYC Extraction ────────────── */
+function PanelChat({ kycFields }) {
+  return (
+    <div className="p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2 mb-1">
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 600, color: C.text }}>Extracting Profile</h3>
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid rgba(59,130,246,0.25)`, borderTopColor: C.blue }} />
+      </div>
+      <p style={{ fontSize: 12, color: C.textSub, marginBottom: 4 }}>Listening to the conversation and extracting information...</p>
+
+      <div className="flex flex-col gap-2">
+        <AnimatePresence>
+          {kycFields.filter(f => f.value && f.value !== '—').map((f, i) => (
+            <motion.div
+              key={f.label}
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{f.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 2 }}>{f.value}</span>
+              </div>
+              <ConfBadge level={f.confidence} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        {/* Placeholder rows for unfilled */}
+        {kycFields.filter(f => !f.value || f.value === '—').map(f => (
+          <div key={f.label} style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: `1px dashed rgba(255,255,255,0.05)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</span>
+            <motion.div animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 60, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Phase: AADHAAR_UPLOAD ───────────────────────────── */
+function PanelAadhaarUpload() {
+  const inputRef = useRef(null);
+  const [file, setFile] = useState(null);
+
+  function handleFile(f) {
+    if (!f) return;
+    setFile(f);
+    // Small delay so user sees the file name, then trigger verify
+    setTimeout(() => triggerAadhaarVerify(f), 800);
+  }
 
   return (
-    <div className="flex flex-col h-full w-full relative z-20" style={{ background: colors.bgPanel, borderLeft: `1px solid ${colors.border}` }}>
+    <div className="p-5 flex flex-col gap-5">
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>Upload Aadhaar Card</h3>
+        <p style={{ fontSize: 12, color: C.textSub, lineHeight: 1.6 }}>
+          The AI has collected your basic details. Please upload your Aadhaar card so we can verify your identity and extract your date of birth.
+        </p>
+      </motion.div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-        <div className="flex flex-col gap-1">
-          <div style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.15em', fontWeight: 600, ...typography }}>SESSION LOG</div>
-          <div style={{ fontSize: 13, color: colors.textPrimary, fontWeight: 500, letterSpacing: '0.05em', fontFamily: 'monospace' }}>TKN-{token?.slice(0, 4).toUpperCase() || 'A4X9'}</div>
-        </div>
-        <button className="px-3 py-1.5 rounded" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${colors.border}`, fontSize: 10, color: colors.textSecondary, fontWeight: 600, letterSpacing: '0.05em', ...typography }}>
-          MANUAL OVERRIDE
-        </button>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.15 }}
+        onClick={() => !file && inputRef.current?.click()}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
+        style={{
+          borderRadius: 14,
+          border: file ? `1px solid ${C.green}` : `2px dashed rgba(59,130,246,0.35)`,
+          background: file ? 'rgba(16,185,129,0.06)' : 'rgba(59,130,246,0.04)',
+          padding: '32px 20px',
+          cursor: file ? 'default' : 'pointer',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+          transition: 'all 0.3s',
+        }}
+      >
+        <input ref={inputRef} type="file" className="hidden" accept="image/*,.pdf" onChange={e => handleFile(e.target.files[0])} />
+
+        {file ? (
+          <>
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', duration: 0.5 }}>
+              <CheckCircle2 size={40} style={{ color: C.green }} />
+            </motion.div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.green }}>{file.name}</span>
+            <span style={{ fontSize: 11, color: C.textSub }}>Processing your document...</span>
+          </>
+        ) : (
+          <>
+            <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}>
+              <Upload size={36} style={{ color: C.blue, opacity: 0.7 }} />
+            </motion.div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Tap to upload Aadhaar</p>
+              <p style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>or drag and drop here • JPG, PNG, PDF</p>
+            </div>
+          </>
+        )}
+      </motion.div>
+
+      <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <ShieldCheck size={14} style={{ color: C.blue, flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 11, color: C.textSub, lineHeight: 1.6 }}>Your document is processed locally. No raw files are transmitted to any external server.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Phase: AADHAAR_VERIFY ───────────────────────────── */
+function PanelAadhaarVerify() {
+  const steps = ['Reading document data', 'Verifying security features', 'Cross-referencing fields', 'Extracting identity info'];
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (step < steps.length - 1) {
+      const t = setTimeout(() => setStep(s => s + 1), 600);
+      return () => clearTimeout(t);
+    }
+  }, [step, steps.length]);
+
+  return (
+    <div className="p-5 flex flex-col gap-5 items-center" style={{ paddingTop: 40 }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        style={{ width: 64, height: 64, borderRadius: '50%', border: `3px solid rgba(59,130,246,0.15)`, borderTopColor: C.blue }}
+      />
+      <div style={{ textAlign: 'center' }}>
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>Verifying Aadhaar</h3>
+        <AnimatePresence mode="wait">
+          <motion.p key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            style={{ fontSize: 12, color: C.textSub }}>
+            {steps[step]}...
+          </motion.p>
+        </AnimatePresence>
       </div>
 
-      {/* Progress */}
-      <div className="flex items-center px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.2)' }}>
+      <div className="w-full flex flex-col gap-2" style={{ maxWidth: 280 }}>
+        {steps.map((s, i) => (
+          <div key={s} className="flex items-center gap-3">
+            <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: i <= step ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${i <= step ? C.green : C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.4s' }}>
+              {i <= step ? <CheckCircle2 size={11} style={{ color: C.green }} /> : <div style={{ width: 4, height: 4, borderRadius: '50%', background: C.textMuted }} />}
+            </div>
+            <span style={{ fontSize: 12, color: i <= step ? C.text : C.textMuted, transition: 'color 0.4s' }}>{s}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Phase: AADHAAR_DONE ─────────────────────────────── */
+function PanelAadhaarDone({ aadhaar }) {
+  const fields = [
+    { label: 'NAME', value: aadhaar.name },
+    { label: 'DATE OF BIRTH', value: aadhaar.dob },
+    { label: 'AGE', value: `${aadhaar.age} years` },
+    { label: 'AADHAAR NUMBER', value: aadhaar.aadhaarNumber },
+  ];
+
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.6 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: `1px solid rgba(16,185,129,0.25)` }}>
+        <CheckCircle2 size={24} style={{ color: C.green, flexShrink: 0 }} />
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.green }}>Aadhaar Verified ✓</p>
+          <p style={{ fontSize: 11, color: C.textSub, marginTop: 2 }}>Identity confirmed successfully</p>
+        </div>
+      </motion.div>
+
+      <div className="flex flex-col gap-2">
+        {fields.map((f, i) => (
+          <motion.div key={f.label} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 + i * 0.1 }}
+            style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block' }}>{f.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 2, display: 'block' }}>{f.value}</span>
+          </motion.div>
+        ))}
+      </div>
+
+      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+        style={{ fontSize: 11, color: C.textSub, fontStyle: 'italic', textAlign: 'center' }}>
+        Starting biometric age verification...
+      </motion.p>
+    </div>
+  );
+}
+
+/* ─── Phase: FACE_SCAN / FACE_DONE ───────────────────── */
+function PanelFaceScan({ faceAge, phase }) {
+  return (
+    <div className="p-5 flex flex-col gap-4 items-center" style={{ paddingTop: 32 }}>
+      <ScanFace size={48} style={{ color: phase === PHASES.FACE_DONE ? (faceAge.status === 'matched' ? C.green : C.red) : C.blue, opacity: 0.8 }} />
+      <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: C.text }}>
+        {phase === PHASES.FACE_SCAN ? 'Biometric Age Check' : faceAge.status === 'matched' ? 'Age Matched ✓' : 'Age Mismatch Detected'}
+      </h3>
+
+      {phase === PHASES.FACE_SCAN && (
+        <p style={{ fontSize: 12, color: C.textSub, textAlign: 'center' }}>
+          Camera is scanning your face. Please look directly at the camera.
+        </p>
+      )}
+
+      {phase === PHASES.FACE_DONE && (
+        <div className="w-full flex flex-col gap-3">
+          {[
+            { label: 'Camera Age Estimate', value: `${faceAge.estimatedAge} years`, good: true },
+            { label: 'Aadhaar Age', value: `${faceAge.aadhaarAge} years`, good: true },
+            { label: 'Age Delta', value: `${faceAge.delta} year${faceAge.delta !== 1 ? 's' : ''}`, good: faceAge.delta <= 5 },
+            { label: 'Confidence Score', value: `${(faceAge.confidence * 100).toFixed(0)}%`, good: true },
+            { label: 'Verdict', value: faceAge.status === 'matched' ? 'PASS' : 'FLAG — MISMATCH', good: faceAge.status === 'matched' },
+          ].map((row, i) => (
+            <motion.div key={row.label} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+              style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 12, color: C.textSub }}>{row.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: row.good ? C.green : C.red }}>{row.value}</span>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Phase: BUREAU ───────────────────────────────────── */
+function PanelBureau() {
+  const checks = ['Connecting to CIBIL bureau', 'Pulling credit report', 'Evaluating DPD history', 'Checking active loans', 'Calculating eligibility'];
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (step < checks.length - 1) {
+      const t = setTimeout(() => setStep(s => s + 1), 400);
+      return () => clearTimeout(t);
+    }
+  }, [step, checks.length]);
+
+  return (
+    <div className="p-5 flex flex-col gap-5 items-center" style={{ paddingTop: 40 }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
+        style={{ width: 60, height: 60, borderRadius: '50%', border: `3px solid rgba(245,158,11,0.15)`, borderTopColor: C.yellow }}
+      />
+      <div style={{ textAlign: 'center' }}>
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>Credit Bureau Check</h3>
+        <AnimatePresence mode="wait">
+          <motion.p key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            style={{ fontSize: 12, color: C.textSub }}>
+            {checks[step]}...
+          </motion.p>
+        </AnimatePresence>
+      </div>
+
+      <div className="w-full flex flex-col gap-2">
+        {checks.map((s, i) => (
+          <div key={s} className="flex items-center gap-3">
+            <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: i <= step ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${i <= step ? C.yellow : C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.4s' }}>
+              {i <= step ? <CheckCircle2 size={10} style={{ color: C.yellow }} /> : <div style={{ width: 3, height: 3, borderRadius: '50%', background: C.textMuted }} />}
+            </div>
+            <span style={{ fontSize: 11, color: i <= step ? C.text : C.textMuted, transition: 'color 0.4s' }}>{s}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Phase: OFFER ────────────────────────────────────── */
+function PanelOffer({ offer, bureau, onUpdateOffer }) {
+  const [amount, setAmount] = useState(offer.amount);
+  const [tenure, setTenure] = useState(offer.tenure);
+  const emi = calcEMI(amount, offer.interestRate, tenure);
+  const loanFill = ((amount - 100000) / (500000 - 100000)) * 100;
+  const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
+
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      {/* Bureau result */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+        <ShieldCheck size={16} style={{ color: C.green }} />
+        <div>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>Credit Score: {bureau.creditScore} — Eligible ✓</span>
+          <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory}</p>
+        </div>
+      </motion.div>
+
+      {/* Offer card */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        style={{ position: 'relative', overflow: 'hidden', padding: '20px', borderRadius: 14, background: 'linear-gradient(145deg, rgba(20,20,32,0.9), rgba(10,10,18,1))', border: `1px solid ${C.borderHi}`, boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 120, height: 120, background: C.blue, opacity: 0.06, borderRadius: '50%', filter: 'blur(40px)' }} />
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+          <Zap size={12} style={{ color: C.blue }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.1em' }}>PERSONALISED OFFER</span>
+        </div>
+
+        <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 4 }}>APPROVED AMOUNT</div>
+        <motion.div key={amount} initial={{ opacity: 0.7, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          style={{ fontSize: 34, fontWeight: 700, color: C.text, letterSpacing: '-0.03em', marginBottom: 16 }}>
+          {fmtINR(amount)}
+        </motion.div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, borderTop: `1px solid rgba(255,255,255,0.06)` }}>
+          <div>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>EMI / MONTH</div>
+            <motion.div key={emi} initial={{ opacity: 0.7 }} animate={{ opacity: 1 }} style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{fmtINR(emi)}</motion.div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>INTEREST RATE</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{offer.interestRate}% p.a.</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>TENURE</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{tenure} mo</div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Sliders */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+        style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+        <p style={{ fontSize: 11, color: C.textSub, marginBottom: 12 }}>Adjust your preferences:</p>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: C.textSub }}>Loan Amount</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{fmtINR(amount)}</span>
+          </div>
+          <input type="range" min={100000} max={500000} step={10000} value={amount}
+            onChange={e => { const v = Number(e.target.value); setAmount(v); onUpdateOffer(v, tenure); }}
+            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${loanFill}%, rgba(255,255,255,0.08) ${loanFill}%, rgba(255,255,255,0.08) 100%)` }}
+          />
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: C.textSub }}>Tenure</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{tenure} months</span>
+          </div>
+          <input type="range" min={12} max={84} step={6} value={tenure}
+            onChange={e => { const v = Number(e.target.value); setTenure(v); onUpdateOffer(amount, v); }}
+            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${tenureFill}%, rgba(255,255,255,0.08) ${tenureFill}%, rgba(255,255,255,0.08) 100%)` }}
+          />
+        </div>
+      </motion.div>
+
+      <motion.button
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+        onClick={() => triggerConsent('Yes, I agree to the terms and conditions of this loan offer')}
+        style={{ width: '100%', padding: '14px 0', borderRadius: 10, background: C.text, color: C.bg, fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(255,255,255,0.12)', letterSpacing: '0.02em' }}
+      >
+        Accept Offer & Confirm →
+      </motion.button>
+    </div>
+  );
+}
+
+/* ─── Phase: CONSENT ──────────────────────────────────── */
+function PanelConsent({ consent, token }) {
+  function downloadAuditTrail() {
+    const blob = new Blob([
+      `CONSENT TRAIL — AgentFinance AI\n\nSession ID: ${token}\nTimestamp: ${consent.timestamp}\n\nConsent Phrase: "${consent.phrase}"\n\nSHA-256 Hash: ${consent.hash}\n\nThis is a tamper-evident record. Do not modify.`
+    ], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `consent-${token}.txt`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.6 }}
+        style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+        <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: `2px solid ${C.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 30px rgba(16,185,129,0.2)` }}>
+          <CheckCircle2 size={36} style={{ color: C.green }} />
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', borderLeft: `3px solid ${C.blue}` }}>
+        <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 6 }}>DETECTED CONSENT PHRASE</div>
+        <p style={{ fontSize: 13, color: C.text, fontStyle: 'italic', lineHeight: 1.6 }}>"{consent.phrase}"</p>
+        <p style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>Captured at {consent.timestamp}</p>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+        style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+        <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 6 }}>SHA-256 CONSENT HASH</div>
+        <div style={{ fontFamily: 'monospace', fontSize: 10, color: C.textSub, wordBreak: 'break-all', lineHeight: 1.7 }}>{consent.hash}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+          <ShieldCheck size={12} style={{ color: C.green }} />
+          <span style={{ fontSize: 11, color: C.green }}>Tamper-evident record stored</span>
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 0', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+        <CheckCircle2 size={16} style={{ color: C.green }} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: C.green, letterSpacing: '0.02em' }}>CONSENT VERIFIED ✓</span>
+      </motion.div>
+
+      <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+        onClick={downloadAuditTrail}
+        style={{ width: '100%', padding: '11px 0', borderRadius: 10, background: 'transparent', color: C.textSub, border: `1px solid ${C.borderHi}`, fontWeight: 600, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <Download size={13} /> Export Consent Trail
+      </motion.button>
+    </div>
+  );
+}
+
+/* ─── Phase: COMPLETE ─────────────────────────────────── */
+function PanelComplete({ offer, token }) {
+  const navigate = useNavigate();
+  const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
+
+  return (
+    <div className="p-5 flex flex-col gap-5 items-center" style={{ paddingTop: 40, textAlign: 'center' }}>
+      <motion.div initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.8 }}
+        style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: `2px solid ${C.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px rgba(16,185,129,0.2)` }}>
+        <CheckCircle2 size={40} style={{ color: C.green }} />
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 22, fontWeight: 700, color: C.text, letterSpacing: '-0.02em', marginBottom: 8 }}>Loan Approved!</h3>
+        <p style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6 }}>Your application is complete. Disbursement is queued for processing.</p>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+        style={{ width: '100%', padding: '16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          {[{ label: 'AMOUNT', value: fmtINR(offer.amount) }, { label: 'EMI', value: `${fmtINR(emi)}/mo` }, { label: 'TENURE', value: `${offer.tenure} mo` }].map(item => (
+            <div key={item.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em' }}>{item.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+        style={{ fontSize: 10, color: C.textMuted, fontFamily: 'monospace' }}>
+        SESSION: {token?.toUpperCase() || 'TKN-DEMO'}
+      </motion.div>
+
+      <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}
+        onClick={() => navigate('/ops')}
+        style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: C.text, color: C.bg, fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', letterSpacing: '0.02em' }}>
+        View Ops Dashboard
+      </motion.button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   RIGHT PANEL (ORCHESTRATED)
+══════════════════════════════════════════════════════════ */
+function RightPanel({ orchState, kycFields, token }) {
+  const { phase, aadhaar, faceAge, bureau, offer, consent } = orchState;
+  const currentStep = phaseToStep(phase);
+
+  function renderContent() {
+    switch (phase) {
+      case PHASES.CHAT:
+        return <PanelChat kycFields={kycFields} />;
+      case PHASES.AADHAAR_UPLOAD:
+        return <PanelAadhaarUpload />;
+      case PHASES.AADHAAR_VERIFY:
+        return <PanelAadhaarVerify />;
+      case PHASES.AADHAAR_DONE:
+        return <PanelAadhaarDone aadhaar={aadhaar} />;
+      case PHASES.FACE_SCAN:
+        return <PanelFaceScan faceAge={faceAge} phase={phase} />;
+      case PHASES.FACE_DONE:
+        return <PanelFaceScan faceAge={faceAge} phase={phase} />;
+      case PHASES.BUREAU:
+        return <PanelBureau />;
+      case PHASES.OFFER:
+        return <PanelOffer offer={offer} bureau={bureau} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
+      case PHASES.CONSENT:
+        return <PanelConsent consent={consent} token={token} />;
+      case PHASES.COMPLETE:
+        return <PanelComplete offer={offer} token={token} />;
+      default:
+        return <PanelChat kycFields={kycFields} />;
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full" style={{ flex: 1, background: C.panel, borderLeft: `1px solid ${C.border}`, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.14em', fontWeight: 600, marginBottom: 3 }}>SESSION LOG</div>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 500, fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+            TKN-{token?.slice(0, 4).toUpperCase() || 'DEMO'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, boxShadow: `0 0 6px ${C.green}`, animation: 'pulse 1.5s infinite' }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.green, letterSpacing: '0.06em' }}>LIVE</span>
+        </div>
+      </div>
+
+      {/* Progress stepper */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: `1px solid ${C.border}`, background: 'rgba(0,0,0,0.15)', flexShrink: 0 }}>
         {STEPS.map((step, idx) => {
-          const stageNum = idx + 1;
-          const isPast = stageNum < currentStage;
-          const isActive = stageNum === currentStage;
+          const stepNum = idx + 1;
+          const isPast = stepNum < currentStep;
+          const isActive = stepNum === currentStep;
           return (
-            <div key={idx} className="flex flex-col items-center flex-1 relative">
+            <div key={step.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, position: 'relative' }}>
               {idx < STEPS.length - 1 && (
-                <div className="absolute top-2 w-full left-1/2 h-px" style={{ background: isPast ? colors.success : colors.border }} />
+                <div style={{ position: 'absolute', top: 8, left: '50%', right: '-50%', height: 1, background: isPast ? C.green : C.border, transition: 'background 0.5s' }} />
               )}
-              <div className="relative z-10 w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300" style={{ background: isPast ? colors.success : isActive ? colors.accent : colors.bgBase, border: `1px solid ${isPast ? colors.success : isActive ? colors.accent : colors.textMuted}` }}>
-                {isPast && <CheckCircle2 size={8} color="#000" strokeWidth={4} />}
+              <div style={{ width: 18, height: 18, borderRadius: '50%', position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isPast ? C.green : isActive ? C.blue : C.bg, border: `1px solid ${isPast ? C.green : isActive ? C.blue : C.textMuted}`, transition: 'all 0.4s' }}>
+                {isPast && <CheckCircle2 size={9} style={{ color: '#000' }} strokeWidth={3.5} />}
+                {isActive && <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.text }} />}
               </div>
-              <span className="mt-2" style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.05em', color: isPast ? colors.textSecondary : isActive ? colors.textPrimary : colors.textMuted, ...typography }}>{step.label}</span>
+              <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: '0.04em', marginTop: 5, color: isPast ? C.textSub : isActive ? C.text : C.textMuted, transition: 'color 0.4s' }}>{step.label}</span>
             </div>
           );
         })}
       </div>
 
-      {/* Dynamic Content */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+      {/* Dynamic content */}
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentStage}
-            initial={{ opacity: 0, y: 10 }}
+            key={phase}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            {currentStage === 1 && <Stage1KYC />}
-            {currentStage === 2 && <Stage2Verify />}
-            {currentStage === 3 && (
-              <Stage3Offer
-                loanAmount={loanAmount} setLoanAmount={setLoanAmount}
-                tenure={tenure} setTenure={setTenure}
-                onAccept={handleAcceptOffer}
-              />
-            )}
-            {currentStage === 4 && <Stage4Consent token={token} />}
-            {currentStage === 5 && <Stage5Complete token={token} loanAmount={loanAmount} tenure={tenure} />}
+            {renderContent()}
           </motion.div>
         </AnimatePresence>
-      </div>
-
-      {/* Footer Navigation */}
-      <div className="flex items-center justify-between px-6 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-        <button
-          onClick={() => setCurrentStage(s => Math.max(1, s - 1))}
-          disabled={currentStage === 1 || currentStage === 5}
-          className="flex items-center gap-1.5 px-3 py-2 transition-opacity"
-          style={{ opacity: (currentStage === 1 || currentStage === 5) ? 0.3 : 1, color: colors.textSecondary, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', ...typography }}
-        >
-          <ChevronLeft size={14} /> REVERT
-        </button>
-        <span style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', ...typography }}>PHASE 0{currentStage} // 05</span>
-        <button
-          onClick={() => setCurrentStage(s => Math.min(5, s + 1))}
-          disabled={currentStage === 5}
-          className="flex items-center gap-1.5 px-3 py-2 rounded transition-all"
-          style={{ opacity: currentStage === 5 ? 0.3 : 1, background: 'rgba(255,255,255,0.05)', color: colors.textPrimary, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', ...typography }}
-        >
-          PROCEED <ChevronRight size={14} />
-        </button>
       </div>
     </div>
   );
 }
 
-/* ─── Main Video Call Page ───────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   MAIN PAGE
+══════════════════════════════════════════════════════════ */
 export default function VideoCallPage() {
   const { token } = useParams();
-  const [currentStage, setCurrentStage] = useState(1);
   const [isVideoOn, setIsVideoOn] = useState(true);
-  const [loanAmount, setLoanAmount] = useState(200000);
-  const [tenure, setTenure] = useState(60);
-  // Gate audio capture on Jitsi join — prevents competing for mic before Jitsi connects
-  const [sessionJoined, setSessionJoined] = useState(false);
+  const [orchState, setOrchState] = useState(() => getOrchestratorState());
 
-  // Shared video reference for UI and Analysis
-  const videoRef = useRef(null);
-
-  // ─── AI Hooks ─────────────────────────────────────────
-  const { isListening, micError, isProcessing, startRecording, stopRecording } = useAudioCapture();
-  const aiState = useAIState({ debounceMs: 500 });
-
-  // Background Video Analysis
-  useVideoAnalysis(sessionJoined && isVideoOn, videoRef);
-
+  // Subscribe to orchestrator changes
   useEffect(() => {
-    document.body.style.backgroundColor = colors.bgBase;
+    const unsub = subscribeOrchestrator(snap => setOrchState(snap));
+    return unsub;
+  }, []);
+
+  // Force dark bg
+  useEffect(() => {
+    document.body.style.backgroundColor = C.bg;
     return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
+  // Audio capture
+  const { isListening, isProcessing, startRecording, stopRecording } = useAudioCapture();
+
+  // AI state (for live KYC extraction)
+  const aiState = useAIState({ debounceMs: 400 });
+
   return (
     <>
-      {/* Desktop — two panel fixed layout */}
-      <div
-        className="hidden md:flex"
-        style={{
-          position: 'fixed', top: 64, left: 0, right: 0, bottom: 0,
-          zIndex: 10, overflow: 'hidden',
-        }}
-      >
+      {/* Desktop */}
+      <div className="hidden md:flex" style={{ position: 'fixed', top: 64, left: 0, right: 0, bottom: 0, zIndex: 10, overflow: 'hidden' }}>
         <LeftPanel
           isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
-          isListening={isListening} micError={micError} isProcessing={isProcessing}
+          isListening={isListening} isProcessing={isProcessing}
           startRecording={startRecording} stopRecording={stopRecording}
-          onJoined={() => setSessionJoined(true)}
-          videoRef={videoRef}
+          phase={orchState.phase}
+          leftOverlay={orchState.leftOverlay}
+          onJoined={() => {}}
         />
         <RightPanel
-          currentStage={currentStage} setCurrentStage={setCurrentStage}
+          orchState={orchState}
+          kycFields={aiState.kycFields}
           token={token}
-          loanAmount={loanAmount} setLoanAmount={setLoanAmount}
-          tenure={tenure} setTenure={setTenure}
         />
       </div>
 
-      {/* Mobile — stacked layout */}
-      <div
-        className="flex md:hidden flex-col"
-        style={{
-          position: 'fixed', top: 64, left: 0, right: 0, bottom: 0,
-          zIndex: 10, overflow: 'hidden',
-        }}
-      >
-        {/* Video — top 42% */}
+      {/* Mobile */}
+      <div className="flex md:hidden flex-col" style={{ position: 'fixed', top: 64, left: 0, right: 0, bottom: 0, zIndex: 10, overflow: 'hidden' }}>
         <div style={{ flex: '0 0 42%', position: 'relative', overflow: 'hidden' }}>
           <LeftPanel
             isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
-            isListening={isListening} micError={micError} isProcessing={isProcessing}
+            isListening={isListening} isProcessing={isProcessing}
             startRecording={startRecording} stopRecording={stopRecording}
-            onJoined={() => setSessionJoined(true)}
-            videoRef={videoRef}
+            phase={orchState.phase}
+            leftOverlay={orchState.leftOverlay}
+            onJoined={() => {}}
           />
         </div>
-        {/* Context panel — fills rest */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <RightPanel
-            currentStage={currentStage} setCurrentStage={setCurrentStage}
-            token={token}
-            loanAmount={loanAmount} setLoanAmount={setLoanAmount}
-            tenure={tenure} setTenure={setTenure}
-          />
+          <RightPanel orchState={orchState} kycFields={aiState.kycFields} token={token} />
         </div>
       </div>
     </>
