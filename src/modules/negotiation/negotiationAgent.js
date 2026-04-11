@@ -135,7 +135,7 @@ function parseAction(rawText) {
   }
   // Soft fallback: detect acceptance phrases
   const lower = rawText.toLowerCase();
-  const acceptSignals = ['confirmed', 'accepted', 'locked in', 'proceeding', 'finalising', 'finalizing'];
+  const acceptSignals = ['confirmed', 'accepted', 'locked in', 'proceeding', 'finalising', 'finalizing', 'lock offer', 'lock terms', 'lock it'];
   if (acceptSignals.some(s => lower.includes(s))) {
     return { action: 'ACCEPT', amount: null, tenure: null, rate: null };
   }
@@ -198,7 +198,7 @@ Rules:
 3. If customer wants different tenure (and it's 12/24/36/48/60/72/84): recalculate EMI and confirm.
 4. If customer requests a HIGHER interest rate (which favors the bank), ACCEPT IT.
 5. If customer requests a LOWER interest rate, firmly explain it is locked to their credit profile and cannot be decreased.
-6. If customer says "yes", "okay", "fine", "accepted", "deal", "haan", "theek hai", "I agree", "go ahead", "proceed": ACCEPT.
+6. If customer says "yes", "okay", "fine", "accepted", "deal", "haan", "theek hai", "I agree", "go ahead", "proceed", or "lock offer terms": ACCEPT.
 7. Keep response under 30 words. Speak naturally. No markdown.
 
 REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):

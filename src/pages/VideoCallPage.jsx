@@ -182,8 +182,6 @@ function CameraFrame({ isVideoOn, onCameraReady, phase }) {
 
   useEffect(() => {
     let active = null;
-
-    // Helper: clear any running interval
     const clearFrameInterval = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -198,34 +196,6 @@ function CameraFrame({ isVideoOn, onCameraReady, phase }) {
           setStream(s);
           if (videoRef.current) videoRef.current.srcObject = s;
           onCameraReady?.();
-
-          // Clear any stale interval before starting a new one (guards Strict Mode)
-          clearFrameInterval();
-
-          let visionBusy = false;
-          intervalRef.current = setInterval(async () => {
-            if (visionBusy) return;
-            if (videoRef.current && canvasRef.current) {
-              const video = videoRef.current;
-              const canvas = canvasRef.current;
-              if (video.videoWidth > 0 && video.videoHeight > 0) {
-                const scale = Math.min(1, 400 / video.videoWidth);
-                canvas.width = video.videoWidth * scale;
-                canvas.height = video.videoHeight * scale;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const frameData = canvas.toDataURL('image/jpeg', 0.6);
-                visionBusy = true;
-                try {
-                  await processVideoFrame(frameData);
-                } catch (e) {
-                  console.error(e);
-                } finally {
-                  visionBusy = false;
-                }
-              }
-            }
-          }, 15000);
         })
         .catch(() => onCameraReady?.());
     } else {

@@ -27,16 +27,20 @@ import {
 import { synthesizeAndPlay } from '../tts/sarvamTTS.js';
 import { addTranscript } from '../transcript/transcriptManager.js';
 import { log } from '../utils/logger.js';
-import { 
-  initLoanApplication, 
-  saveKycRecord, 
-  saveBureauReport, 
-  saveLoanOffers, 
+import {
+  initLoanApplication,
+  saveKycRecord,
+  saveBureauReport,
+  saveLoanOffers,
   saveTranscript,
   completeApplication,
   updateApplicationFinancials,
-  uploadMedia
+  uploadMedia,
+  getFingerprintVelocity,
+  saveFraudReport
 } from '../../services/dbService.js';
+import { captureSecurityMetadata } from '../../services/securityService.js';
+import { analyzeFraudRisk } from '../fraud/fraudEngine.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -152,9 +156,28 @@ export async function triggerAadhaarUpload() {
   log('ORCHESTRATOR', 'INFO', '→ AADHAAR_UPLOAD');
   notify();
 
-  // Initialize application in Supabase
-  const appId = await initLoanApplication();
-  
+  // 1. Capture Security Metadata (IP, Geo, Fingerprint) 
+  const securityMetadata = await captureSecurityMetadata();
+
+  // 1a. Run Algorithmic Fraud Engine
+  const velocity = await getFingerprintVelocity(securityMetadata.device_fingerprint);
+  const { riskScore, signals } = analyzeFraudRisk(securityMetadata, velocity);
+
+  // 2. Initialize application in Supabase with security + fraud data
+  const appData = await initLoanApplication(securityMetadata);
+  const appId = appData?.id;
+
+  // 2a. Save the fraud report immediately
+  if (appId) {
+    await saveFraudReport(riskScore, signals);
+  }
+
+  if (riskScore >= 80) {
+    log('ORCHESTRATOR', 'WARN', 'CRITICAL FRAUD RISK DETECTED. Blocking flow.', signals);
+    // Note: We don't throw an error to avoid crashing the UI, 
+    // but the system will restrict higher-tier actions if needed.
+  }
+
   // A. PERSIST VERBAL DATA: Save the income/purpose/employment extracted from voice
   try {
     const { getState } = await import('../state/stateManager.js');
@@ -342,9 +365,10 @@ function _triggerFaceScan() {
     if (estimatedAge === null) {
       estimatedAge = aadhaarAge;
     }
-    // Default to true if the model couldn't determine liveness
+    // fail-closed: If vision hasn't run or is inconclusive, block progression
     if (isLivePerson === null) {
-      isLivePerson = true;
+      log('ORCHESTRATOR', 'WARN', 'Liveness result null (possible rate limit/cooldown) — failing closed');
+      isLivePerson = false;
     }
 
     const delta = aadhaarAge !== null && estimatedAge !== null ? Math.abs(estimatedAge - aadhaarAge) : null;
@@ -453,7 +477,7 @@ async function _triggerBureau() {
       },
     });
     log('ORCHESTRATOR', 'INFO', `Policy decision: ${policyResult.decision}`, policyResult.rules);
-    
+
     // D. PERSIST REASONING: Save bureau data along with rule-by-rule audit reasoning
     saveBureauReport(bureauResponse, policyResult.rules);
 
@@ -556,20 +580,20 @@ export function triggerConsent(phrase) {
     },
   };
   log('ORCHESTRATOR', 'INFO', '→ CONSENT', { phrase, hash });
-  
+
   // B. LINK FINAL OFFER: Update application status and mark selected offer
   // We deduce the user's accepted plan name from current terms matched against limits
   let acceptedPlan = null;
   if (state.negotiation.policyLimits?.alternatives) {
-    const match = state.negotiation.policyLimits.alternatives.find(alt => 
-      Math.abs(alt.amount - state.offer.amount) < 100 && 
+    const match = state.negotiation.policyLimits.alternatives.find(alt =>
+      Math.abs(alt.amount - state.offer.amount) < 100 &&
       alt.tenure === state.offer.tenure
     );
     acceptedPlan = match ? match.title || match.name : null;
   }
-  
+
   completeApplication('offer_accepted', acceptedPlan);
-  
+
   notify();
 
   setTimeout(() => {

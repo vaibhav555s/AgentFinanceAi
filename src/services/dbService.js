@@ -9,22 +9,72 @@ export const setApplicationId = (id) => {
 
 export const getApplicationId = () => activeApplicationId;
 
-export const initLoanApplication = async () => {
+export const initLoanApplication = async (metadata = {}) => {
   try {
     const { data, error } = await supabase
       .from('loan_applications')
-      .insert([{ status: 'pending_kyc' }])
+      .insert([{
+        status: 'pending_kyc',
+        ip_address: metadata.ip_address,
+        latitude: metadata.latitude,
+        longitude: metadata.longitude,
+        device_fingerprint: metadata.device_fingerprint,
+        user_agent: metadata.user_agent
+      }])
       .select()
       .single();
-      
+
     if (error) throw error;
-    
+
     activeApplicationId = data.id;
     log('DB', 'INFO', `Initialized new loan application: ${activeApplicationId}`);
-    return activeApplicationId;
+    return data; // Return full data object
   } catch (err) {
     log('DB', 'ERROR', 'Failed to init loan application', err);
     return null;
+  }
+};
+
+/**
+ * Velocity Check: Returns the count of applications from the same device 
+ * in the last 24 hours.
+ */
+export const getFingerprintVelocity = async (fingerprint) => {
+  if (!fingerprint) return 0;
+  try {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error } = await supabase
+      .from('loan_applications')
+      .select('*', { count: 'exact', head: true })
+      .eq('device_fingerprint', fingerprint)
+      .gt('created_at', yesterday);
+
+    if (error) throw error;
+    return count || 0;
+  } catch (err) {
+    log('DB', 'ERROR', 'Failed to fetch velocity count', err);
+    return 0;
+  }
+};
+
+/**
+ * Persists the fraud assessment to the database.
+ */
+export const saveFraudReport = async (riskScore, signals) => {
+  if (!activeApplicationId) return;
+  try {
+    const { error } = await supabase
+      .from('loan_applications')
+      .update({
+        fraud_risk_score: riskScore,
+        fraud_signals: signals
+      })
+      .eq('id', activeApplicationId);
+
+    if (error) throw error;
+    log('DB', 'INFO', `Saved fraud report (score: ${riskScore}) for ${activeApplicationId}`);
+  } catch (err) {
+    log('DB', 'ERROR', 'Failed to save fraud report', err);
   }
 };
 
@@ -40,12 +90,12 @@ export const uploadMedia = async (folder, fileName, mediaData) => {
     if (typeof mediaData === 'string' && mediaData.startsWith('data:')) {
       const match = mediaData.match(/^data:([^;]+);base64,/);
       if (match) contentType = match[1];
-      
+
       const base64Content = mediaData.split(';base64,').pop();
       const byteCharacters = atob(base64Content);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       const byteArray = new Uint8Array(byteNumbers);
       finalData = new Blob([byteArray], { type: contentType });
@@ -57,7 +107,7 @@ export const uploadMedia = async (folder, fileName, mediaData) => {
     const filePath = `${activeApplicationId}/${folder}/${fileName}`;
     const { data, error } = await supabase.storage
       .from('kyc-documents')
-      .upload(filePath, finalData, { 
+      .upload(filePath, finalData, {
         upsert: true,
         contentType: contentType // Crucial for opening in browser
       });
@@ -127,7 +177,7 @@ export const saveKycRecord = async (extractedData, faceAgeObj, aadhaarObj = null
       aadhaar_image_url: mediaUrls.aadhaar || null,
       face_capture_url: mediaUrls.face || null
     }]);
-    
+
     if (error) throw error;
     log('DB', 'INFO', `Saved KYC record for ${aadhaarName}`);
   } catch (err) {
@@ -147,10 +197,10 @@ export const saveBureauReport = async (bureauData, policyLogs = []) => {
       report_data: bureauData,
       policy_reasoning: policyLogs
     }]);
-    
+
     if (error) throw error;
     log('DB', 'INFO', 'Saved Bureau Report with Policy Reasoning');
-    
+
     // Update application status
     await supabase.from('loan_applications').update({ status: 'negotiating' }).eq('id', activeApplicationId);
   } catch (err) {
@@ -217,7 +267,7 @@ export const completeApplication = async (status, selectedPlanName = null) => {
   try {
     // If a plan was explicitly selected, we first update that specific offer in the loan_offers table
     let finalOfferId = null;
-    
+
     if (selectedPlanName) {
       const { data, error } = await supabase
         .from('loan_offers')
@@ -226,18 +276,18 @@ export const completeApplication = async (status, selectedPlanName = null) => {
         .eq('offer_tier', selectedPlanName)
         .select()
         .single();
-        
+
       if (!error && data) {
-         finalOfferId = data.id;
+        finalOfferId = data.id;
       }
     }
-    
+
     const updateData = { status, updated_at: new Date().toISOString() };
     if (finalOfferId) updateData.final_offer_id = finalOfferId;
-    
+
     const { error } = await supabase.from('loan_applications').update(updateData).eq('id', activeApplicationId);
     if (error) throw error;
-    
+
     log('DB', 'INFO', `Application ${activeApplicationId} closed with status: ${status}`);
   } catch (err) {
     log('DB', 'ERROR', 'Failed to complete application', err);
