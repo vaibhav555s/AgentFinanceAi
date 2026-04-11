@@ -293,3 +293,38 @@ export const completeApplication = async (status, selectedPlanName = null) => {
     log('DB', 'ERROR', 'Failed to complete application', err);
   }
 };
+
+/**
+ * Tier 5: Persists LLM chain-of-thought intelligence analysis.
+ * Stores intent classification + risk persona with full reasoning traces.
+ *
+ * @param {string} applicationId - The application UUID
+ * @param {{ intent: Object, riskPersona: Object }} analysisData
+ */
+export const saveIntelligenceAnalysis = async (applicationId, analysisData) => {
+  if (!applicationId || !analysisData) return;
+  try {
+    const updatePayload = {};
+
+    if (analysisData.intent) {
+      updatePayload.intent_category = analysisData.intent.category;
+      updatePayload.intent_confidence = analysisData.intent.confidence;
+      updatePayload.intent_reasoning = analysisData.intent.chainOfThought;
+    }
+
+    if (analysisData.riskPersona) {
+      updatePayload.risk_persona = analysisData.riskPersona.label;
+      updatePayload.risk_reasoning = analysisData.riskPersona.chainOfThought;
+    }
+
+    const { error } = await supabase
+      .from('loan_applications')
+      .update(updatePayload)
+      .eq('id', applicationId);
+
+    if (error) throw error;
+    log('DB', 'INFO', `Saved Tier 5 intelligence analysis for ${applicationId}`);
+  } catch (err) {
+    log('DB', 'ERROR', 'Failed to save intelligence analysis', err);
+  }
+};

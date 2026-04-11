@@ -37,10 +37,12 @@ import {
   updateApplicationFinancials,
   uploadMedia,
   getFingerprintVelocity,
-  saveFraudReport
+  saveFraudReport,
+  saveIntelligenceAnalysis
 } from '../../services/dbService.js';
 import { captureSecurityMetadata } from '../../services/securityService.js';
 import { analyzeFraudRisk } from '../fraud/fraudEngine.js';
+import { analyzeSessionIntelligence } from '../ai/intelligenceAgent.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -188,6 +190,24 @@ export async function triggerAadhaarUpload() {
   }
 
   log('ORCHESTRATOR', 'INFO', `DB application created: ${appId}`);
+
+  // TIER 5: Fire-and-forget LLM chain-of-thought analysis
+  // Runs entirely in the background — does NOT block the Aadhaar upload UI
+  if (appId) {
+    (async () => {
+      try {
+        const { getTranscript } = await import('../transcript/transcriptManager.js');
+        const transcript = getTranscript();
+        const analysis = await analyzeSessionIntelligence(transcript);
+        if (analysis) {
+          await saveIntelligenceAnalysis(appId, analysis);
+          log('ORCHESTRATOR', 'INFO', '✅ Tier 5 intelligence analysis saved to DB');
+        }
+      } catch (err) {
+        log('ORCHESTRATOR', 'WARN', 'Tier 5 intelligence background analysis failed', err);
+      }
+    })();
+  }
 }
 
 /** Called when user has uploaded the Aadhaar file */
