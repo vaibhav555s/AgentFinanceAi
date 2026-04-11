@@ -5,8 +5,10 @@ import {
   Mic, MicOff, Video, VideoOff, Lock, User, Shield, Tag,
   CheckCircle, Star, FileText, Upload, Eye, SlidersHorizontal,
   Download, ChevronLeft, ChevronRight, ScanFace, CheckCircle2,
-  ShieldCheck, Zap,
+  ShieldCheck, Zap, AlertTriangle,
 } from 'lucide-react';
+import useAudioCapture from '../hooks/useAudioCapture.js';
+import useAIState from '../hooks/useAIState.js';
 
 /* ─── Constants ──────────────────────────────────────── */
 const CAPTIONS = [
@@ -25,14 +27,7 @@ const STEPS = [
   { icon: Star,         label: 'Done'    },
 ];
 
-const KYC_FIELDS = [
-  { label: 'Full Name',        value: 'Rahul Sharma',             confidence: 'High'   },
-  { label: 'Age',              value: '32',                        confidence: 'High'   },
-  { label: 'Employment Type',  value: 'Salaried — Private Sector', confidence: 'High'   },
-  { label: 'Monthly Income',   value: '₹85,000',                  confidence: 'Medium' },
-  { label: 'Loan Purpose',     value: 'Home Renovation',          confidence: 'High'   },
-  { label: 'Requested Amount', value: '₹3,00,000',                confidence: 'High'   },
-];
+/* KYC_FIELDS now driven dynamically from AI state via useAIState hook */
 
 /* ─── Helpers ────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -121,14 +116,22 @@ function ConfBadge({ level }) {
 }
 
 /* ─── Stage 1 — KYC ──────────────────────────────────── */
-function Stage1KYC() {
+function Stage1KYC({ kycFields = [], isListening, risk, intent }) {
   const [visible, setVisible] = useState(0);
   useEffect(() => {
-    if (visible < KYC_FIELDS.length) {
+    if (visible < kycFields.length) {
       const t = setTimeout(() => setVisible(v => v + 1), 420);
       return () => clearTimeout(t);
     }
-  }, [visible]);
+  }, [visible, kycFields.length]);
+
+  // Re-trigger animation when new fields arrive with values
+  const filledCount = kycFields.filter(f => f.value !== '—').length;
+  useEffect(() => {
+    if (filledCount > 0 && visible < filledCount) {
+      setVisible(filledCount);
+    }
+  }, [filledCount]);
 
   return (
     <div className="p-4 flex flex-col gap-3">
@@ -136,16 +139,20 @@ function Stage1KYC() {
         <h3 className="text-sm font-semibold" style={{ fontFamily: 'Sora, sans-serif', color: 'var(--text-primary)' }}>
           Extracting Profile
         </h3>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6' }}
-        />
+        {isListening && (
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+            style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6' }}
+          />
+        )}
       </div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>AI is analyzing your responses...</p>
+      <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+        {isListening ? 'AI is analyzing your responses...' : 'Enable mic to start AI extraction'}
+      </p>
 
       <div className="flex flex-col gap-2">
-        {KYC_FIELDS.map((f, i) => (
+        {kycFields.map((f, i) => (
           <AnimatePresence key={f.label}>
             {i < visible && (
               <motion.div
@@ -157,16 +164,49 @@ function Stage1KYC() {
               >
                 <div className="flex flex-col min-w-0">
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{f.label}</span>
-                  <span className="font-semibold truncate" style={{ fontSize: 13, color: 'var(--text-primary)', marginTop: 1 }}>{f.value}</span>
+                  <span className="font-semibold truncate" style={{ fontSize: 13, color: f.value === '—' ? 'var(--text-muted)' : 'var(--text-primary)', marginTop: 1 }}>{f.value}</span>
                 </div>
-                <ConfBadge level={f.confidence} />
+                {f.confidence === 'Waiting' ? (
+                  <span
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                    style={{ color: '#64748B', background: 'rgba(100,116,139,0.12)', border: '1px solid rgba(100,116,139,0.25)' }}
+                  >
+                    Waiting
+                  </span>
+                ) : (
+                  <ConfBadge level={f.confidence} />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         ))}
       </div>
 
-      {visible >= KYC_FIELDS.length && (
+      {/* Risk & Intent mini-bar */}
+      {(risk?.level || intent?.intent) && risk.level !== 'low' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex items-center gap-3 mt-1"
+          style={{ fontSize: 11 }}
+        >
+          {risk && (
+            <span style={{
+              color: risk.level === 'high' ? '#EF4444' : risk.level === 'medium' ? '#F59E0B' : '#10B981',
+              fontWeight: 600,
+            }}>
+              Risk: {risk.level.toUpperCase()} ({risk.score}/100)
+            </span>
+          )}
+          {intent?.intent !== 'unknown' && (
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Intent: {intent.intent.replace(/_/g, ' ')}
+            </span>
+          )}
+        </motion.div>
+      )}
+
+      {visible >= kycFields.length && kycFields.some(f => f.confidence === 'Low' || f.confidence === 'Medium') && (
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -464,14 +504,18 @@ function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept })
 }
 
 /* ─── Stage 4 — Consent ──────────────────────────────── */
-function Stage4Consent({ token }) {
+function Stage4Consent({ token, consentState }) {
+  const isLocked = consentState?.locked || false;
+  const phrase = consentState?.phrase || null;
+  const consentTimestamp = consentState?.timestamp
+    ? new Date(consentState.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : formatTime();
   const hash = 'a3f9bc2e847d1c6f4b8e2d9a7c3f1b5e9d2c8a4f7b1e6c3d9a5f2b8e4d7c1a3f';
-  const timestamp = '14:32:08';
 
   function downloadConsent() {
     const blob = new Blob([
-      `CONSENT TRAIL — AgentFinance AI\n\nSession: ${token}\nTimestamp: ${timestamp}\n\n` +
-      `Consent Phrase: "Yes, I agree to the terms and conditions of this loan offer"\n\n` +
+      `CONSENT TRAIL — AgentFinance AI\n\nSession: ${token}\nTimestamp: ${consentTimestamp}\n\n` +
+      `Consent Phrase: "${phrase || 'Pending capture'}"\n\n` +
       `SHA-256 Hash: ${hash}\n\nTamper-evident record. Do not modify.`
     ], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -489,69 +533,107 @@ function Stage4Consent({ token }) {
         </h3>
       </div>
 
-      {/* Detected phrase */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-card p-4"
-        style={{ borderRadius: 12, borderLeft: '3px solid #3B82F6' }}
-      >
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8 }}>
-          DETECTED CONSENT PHRASE
-        </div>
-        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)', fontStyle: 'italic', marginBottom: 8 }}>
-          "Yes, I agree to the terms and conditions of this loan offer."
-        </p>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          Captured at {timestamp} • Session #{token}
-        </div>
-      </motion.div>
-
-      {/* Hash */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="glass-card p-4"
-        style={{ borderRadius: 12 }}
-      >
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 6 }}>
-          CONSENT HASH (SHA-256)
-        </div>
-        <div
-          style={{
-            fontFamily: 'monospace', fontSize: 11, color: '#94A3B8',
-            letterSpacing: '0.05em', wordBreak: 'break-all', lineHeight: 1.6, marginBottom: 8
-          }}
+      {/* Consent status */}
+      {!isLocked ? (
+        /* Waiting for consent */
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-4 flex flex-col items-center gap-3"
+          style={{ borderRadius: 12, borderLeft: '3px solid #F59E0B' }}
         >
-          {hash}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <ShieldCheck size={12} style={{ color: '#10B981' }} />
-          <span style={{ fontSize: 11, color: '#10B981' }}>Tamper-evident record stored</span>
-        </div>
-      </motion.div>
+          <motion.div
+            animate={{ scale: [1, 1.15, 1], opacity: [0.6, 1, 0.6] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Mic size={28} style={{ color: '#F59E0B' }} />
+          </motion.div>
+          <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
+            Listening for verbal consent...
+          </p>
+          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+            Say "I agree", "Yes, proceed", or "I accept" to confirm
+          </p>
 
-      {/* Status badge */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.6 }}
-        className="flex items-center justify-center gap-2 py-3 rounded-xl"
-        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
-      >
-        <CheckCircle2 size={16} style={{ color: '#10B981' }} />
-        <span className="font-bold" style={{ fontSize: 14, color: '#10B981', letterSpacing: '0.02em' }}>
-          CONSENT VERIFIED ✓
-        </span>
-      </motion.div>
+          {consentState?.refusalDetected && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-1.5 mt-1"
+            >
+              <AlertTriangle size={12} style={{ color: '#EF4444' }} />
+              <span style={{ fontSize: 11, color: '#EF4444' }}>Refusal detected — consent not granted</span>
+            </motion.div>
+          )}
+        </motion.div>
+      ) : (
+        /* Consent captured */
+        <>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="glass-card p-4"
+            style={{ borderRadius: 12, borderLeft: '3px solid #10B981' }}
+          >
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8 }}>
+              DETECTED CONSENT PHRASE
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)', fontStyle: 'italic', marginBottom: 8 }}>
+              "{phrase}"
+            </p>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Captured at {consentTimestamp} • Session #{token}
+            </div>
+          </motion.div>
+
+          {/* Hash */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="glass-card p-4"
+            style={{ borderRadius: 12 }}
+          >
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 6 }}>
+              CONSENT HASH (SHA-256)
+            </div>
+            <div
+              style={{
+                fontFamily: 'monospace', fontSize: 11, color: '#94A3B8',
+                letterSpacing: '0.05em', wordBreak: 'break-all', lineHeight: 1.6, marginBottom: 8
+              }}
+            >
+              {hash}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck size={12} style={{ color: '#10B981' }} />
+              <span style={{ fontSize: 11, color: '#10B981' }}>Tamper-evident record stored</span>
+            </div>
+          </motion.div>
+
+          {/* Status badge */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.6 }}
+            className="flex items-center justify-center gap-2 py-3 rounded-xl"
+            style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
+          >
+            <CheckCircle2 size={16} style={{ color: '#10B981' }} />
+            <span className="font-bold" style={{ fontSize: 14, color: '#10B981', letterSpacing: '0.02em' }}>
+              CONSENT VERIFIED ✓
+            </span>
+          </motion.div>
+        </>
+      )}
 
       {/* Export button */}
       <button
         className="btn-outline flex items-center justify-center gap-2"
-        style={{ height: 44, fontSize: 13 }}
-        onClick={downloadConsent}
+        style={{ height: 44, fontSize: 13, opacity: isLocked ? 1 : 0.5, cursor: isLocked ? 'pointer' : 'not-allowed' }}
+        onClick={isLocked ? downloadConsent : undefined}
+        disabled={!isLocked}
       >
         <Download size={14} />
         Export Consent Trail
@@ -723,7 +805,7 @@ function ProgressStepper({ currentStage }) {
 }
 
 /* ─── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
+function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isListening, micError, isProcessing }) {
   return (
     <div
       className="relative flex flex-col"
@@ -787,6 +869,41 @@ function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
           </span>
           <SpeakingBars />
         </div>
+
+        {/* Listening / Processing / Error indicators */}
+        <AnimatePresence mode="wait">
+          {micError ? (
+            <motion.div
+              key="mic-error"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="flex items-center gap-2 glass-pill px-4 py-2"
+              style={{ border: '1px solid rgba(239,68,68,0.3)', maxWidth: 360 }}
+            >
+              <AlertTriangle size={14} style={{ color: '#EF4444', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: '#EF4444' }}>{micError}</span>
+            </motion.div>
+          ) : isListening ? (
+            <motion.div
+              key="listening"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="flex items-center gap-2 glass-pill px-4 py-2"
+              style={{ border: '1px solid rgba(59,130,246,0.3)' }}
+            >
+              <motion.div
+                animate={{ scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ width: 8, height: 8, borderRadius: '50%', background: '#3B82F6', flexShrink: 0 }}
+              />
+              <span style={{ fontSize: 12, color: '#93C5FD' }}>
+                {isProcessing ? 'Processing speech...' : 'Listening...'}
+              </span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
       {/* Caption bar */}
@@ -837,7 +954,7 @@ function LeftPanel({ isMicOn, setIsMicOn, isVideoOn, setIsVideoOn }) {
 }
 
 /* ─── Right Panel ────────────────────────────────────── */
-function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanAmount, tenure, setTenure }) {
+function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanAmount, tenure, setTenure, aiState, isListening }) {
   function handleAcceptOffer() { setCurrentStage(4); }
 
   return (
@@ -895,7 +1012,14 @@ function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanA
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            {currentStage === 1 && <Stage1KYC />}
+            {currentStage === 1 && (
+              <Stage1KYC
+                kycFields={aiState.kycFields}
+                isListening={isListening}
+                risk={aiState.risk}
+                intent={aiState.intent}
+              />
+            )}
             {currentStage === 2 && <Stage2Verify />}
             {currentStage === 3 && (
               <Stage3Offer
@@ -904,7 +1028,7 @@ function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanA
                 onAccept={handleAcceptOffer}
               />
             )}
-            {currentStage === 4 && <Stage4Consent token={token} />}
+            {currentStage === 4 && <Stage4Consent token={token} consentState={aiState.consent} />}
             {currentStage === 5 && <Stage5Complete token={token} loanAmount={loanAmount} tenure={tenure} />}
           </motion.div>
         </AnimatePresence>
@@ -961,6 +1085,10 @@ export default function VideoCallPage() {
   const [loanAmount, setLoanAmount] = useState(200000);
   const [tenure, setTenure] = useState(60);
 
+  // ─── AI Hooks ─────────────────────────────────────────
+  const { isListening, micError, isProcessing } = useAudioCapture(isMicOn);
+  const aiState = useAIState({ debounceMs: 500 });
+
   // Prevent body scroll while on this page
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -980,12 +1108,14 @@ export default function VideoCallPage() {
         <LeftPanel
           isMicOn={isMicOn} setIsMicOn={setIsMicOn}
           isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
+          isListening={isListening} micError={micError} isProcessing={isProcessing}
         />
         <RightPanel
           currentStage={currentStage} setCurrentStage={setCurrentStage}
           token={token}
           loanAmount={loanAmount} setLoanAmount={setLoanAmount}
           tenure={tenure} setTenure={setTenure}
+          aiState={aiState} isListening={isListening}
         />
       </div>
 
@@ -1002,6 +1132,7 @@ export default function VideoCallPage() {
           <LeftPanel
             isMicOn={isMicOn} setIsMicOn={setIsMicOn}
             isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
+            isListening={isListening} micError={micError} isProcessing={isProcessing}
           />
         </div>
         {/* Context panel — fills rest */}
@@ -1011,6 +1142,7 @@ export default function VideoCallPage() {
             token={token}
             loanAmount={loanAmount} setLoanAmount={setLoanAmount}
             tenure={tenure} setTenure={setTenure}
+            aiState={aiState} isListening={isListening}
           />
         </div>
       </div>
