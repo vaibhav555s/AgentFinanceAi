@@ -15,6 +15,7 @@ import {
   triggerAadhaarVerify,
   updateOffer,
   triggerConsent,
+  finalizeNegotiation,
   PHASES,
 } from '../modules/orchestration/sessionOrchestrator.js';
 
@@ -614,93 +615,146 @@ function PanelBureau() {
   );
 }
 
-/* ─── Phase: OFFER ────────────────────────────────────── */
-function PanelOffer({ offer, bureau, onUpdateOffer }) {
-  const [amount, setAmount] = useState(offer.amount);
-  const [tenure, setTenure] = useState(offer.tenure);
-  const emi = calcEMI(amount, offer.interestRate, tenure);
-  const loanFill = ((amount - 100000) / (500000 - 100000)) * 100;
-  const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
+/* ─── Phase: OFFER — Live Negotiation Panel ────────────── */
+function PanelOffer({ offer, bureau, negotiation }) {
+  const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
+  const { policyLimits, log: negLog, currentRound } = negotiation || {};
+  const maxAmount = policyLimits?.maxAmount || 500000;
+  const eligibilityPct = Math.min(100, Math.round((offer.amount / maxAmount) * 100));
 
   return (
-    <div className="p-5 flex flex-col gap-4">
-      {/* Bureau result */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
-        <ShieldCheck size={16} style={{ color: C.green }} />
+    <div className="p-4 flex flex-col gap-3">
+
+      {/* Bureau badge */}
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 13px', borderRadius: 10,
+          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.18)' }}>
+        <ShieldCheck size={14} style={{ color: C.green }} />
         <div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>Credit Score: {bureau.creditScore} — Eligible ✓</span>
-          <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory}</p>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>CIBIL Score: {bureau.creditScore} — Eligible ✓</span>
+          <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory} • {policyLimits?.policyNote || 'Policy compliant'}</p>
         </div>
       </motion.div>
 
-      {/* Offer card */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        style={{ position: 'relative', overflow: 'hidden', padding: '20px', borderRadius: 14, background: 'linear-gradient(145deg, rgba(20,20,32,0.9), rgba(10,10,18,1))', border: `1px solid ${C.borderHi}`, boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
-        <div style={{ position: 'absolute', top: 0, right: 0, width: 120, height: 120, background: C.blue, opacity: 0.06, borderRadius: '50%', filter: 'blur(40px)' }} />
+      {/* Live offer card */}
+      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}
+        style={{ position: 'relative', overflow: 'hidden', padding: '16px 18px', borderRadius: 16,
+          background: 'linear-gradient(135deg, rgba(15,22,50,0.96) 0%, rgba(10,10,20,1) 100%)',
+          border: `1px solid ${C.borderHi}`, boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'absolute', top: -20, right: -20, width: 140, height: 140, background: C.blue, opacity: 0.07, borderRadius: '50%', filter: 'blur(50px)' }} />
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-          <Zap size={12} style={{ color: C.blue }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.1em' }}>PERSONALISED OFFER</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+          <motion.div animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: 6, height: 6, borderRadius: '50%', background: C.blue, boxShadow: `0 0 8px ${C.blue}` }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.12em' }}>
+            {currentRound > 0 ? `LIVE NEGOTIATION · ROUND ${currentRound}` : 'PERSONALISED OFFER'}
+          </span>
         </div>
 
-        <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 4 }}>APPROVED AMOUNT</div>
-        <motion.div key={amount} initial={{ opacity: 0.7, y: 4 }} animate={{ opacity: 1, y: 0 }}
-          style={{ fontSize: 34, fontWeight: 700, color: C.text, letterSpacing: '-0.03em', marginBottom: 16 }}>
-          {fmtINR(amount)}
+        <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 3 }}>APPROVED AMOUNT</div>
+        <motion.div key={offer.amount} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+          style={{ fontSize: 34, fontWeight: 800, color: C.text, letterSpacing: '-0.04em', marginBottom: 4,
+            fontVariantNumeric: 'tabular-nums' }}>
+          {fmtINR(offer.amount)}
         </motion.div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, borderTop: `1px solid rgba(255,255,255,0.06)` }}>
-          <div>
-            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>EMI / MONTH</div>
-            <motion.div key={emi} initial={{ opacity: 0.7 }} animate={{ opacity: 1 }} style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{fmtINR(emi)}</motion.div>
+        {policyLimits && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 9, color: C.textMuted }}>Policy utilisation</span>
+              <span style={{ fontSize: 9, fontWeight: 600,
+                color: eligibilityPct > 90 ? C.yellow : C.green }}>{
+                eligibilityPct}% of max {fmtINR(maxAmount)}</span>
+            </div>
+            <div style={{ height: 3, borderRadius: 99, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+              <motion.div initial={{ width: 0 }} animate={{ width: `${eligibilityPct}%` }}
+                transition={{ duration: 0.9, ease: 'easeOut' }}
+                style={{ height: '100%', borderRadius: 99,
+                  background: eligibilityPct > 90
+                    ? `linear-gradient(90deg, ${C.blue}, ${C.yellow})`
+                    : `linear-gradient(90deg, ${C.blue}, #06b6d4)` }} />
+            </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>INTEREST RATE</div>
-            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{offer.interestRate}% p.a.</div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>TENURE</div>
-            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{tenure} mo</div>
-          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          {[{ label: 'EMI / MONTH', value: fmtINR(emi) }, { label: 'RATE P.A.', value: `${offer.interestRate}%` }, { label: 'TENURE', value: `${offer.tenure} mo` }].map(s => (
+            <div key={s.label}>
+              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 2 }}>{s.label}</div>
+              <motion.div key={s.value} initial={{ opacity: 0.5 }} animate={{ opacity: 1 }}
+                style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{s.value}</motion.div>
+            </div>
+          ))}
         </div>
       </motion.div>
 
-      {/* Sliders */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-        style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
-        <p style={{ fontSize: 11, color: C.textSub, marginBottom: 12 }}>Adjust your preferences:</p>
-
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: C.textSub }}>Loan Amount</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{fmtINR(amount)}</span>
-          </div>
-          <input type="range" min={100000} max={500000} step={10000} value={amount}
-            onChange={e => { const v = Number(e.target.value); setAmount(v); onUpdateOffer(v, tenure); }}
-            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${loanFill}%, rgba(255,255,255,0.08) ${loanFill}%, rgba(255,255,255,0.08) 100%)` }}
-          />
+      {/* Negotiation log */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+        style={{ borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+        <div style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.025)', borderBottom: `1px solid ${C.border}`,
+          display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Activity size={11} style={{ color: C.blue }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, letterSpacing: '0.08em' }}>NEGOTIATION LIVE LOG</span>
+          {currentRound > 0 && (
+            <span style={{ fontSize: 9, color: C.textMuted, marginLeft: 'auto' }}>{currentRound} round{currentRound !== 1 ? 's' : ''}</span>
+          )}
         </div>
-
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: C.textSub }}>Tenure</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{tenure} months</span>
-          </div>
-          <input type="range" min={12} max={84} step={6} value={tenure}
-            onChange={e => { const v = Number(e.target.value); setTenure(v); onUpdateOffer(amount, v); }}
-            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${tenureFill}%, rgba(255,255,255,0.08) ${tenureFill}%, rgba(255,255,255,0.08) 100%)` }}
-          />
+        <div style={{ maxHeight: 170, overflowY: 'auto', scrollbarWidth: 'none' }}>
+          {!negLog || negLog.length === 0 ? (
+            <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }}
+              style={{ padding: '16px', textAlign: 'center', color: C.textMuted, fontSize: 11 }}>
+              Speak to negotiate — say "give me more" or "I accept"
+            </motion.div>
+          ) : (
+            <AnimatePresence>
+              {negLog.map((entry, i) => (
+                <motion.div key={i} initial={{ opacity: 0, x: entry.type === 'AI' ? -10 : 10 }}
+                  animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }}
+                  style={{ display: 'flex', gap: 9, padding: '8px 14px', alignItems: 'flex-start',
+                    borderBottom: i < negLog.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+                    background: entry.type === 'AI' ? 'rgba(59,130,246,0.14)' : 'rgba(16,185,129,0.1)',
+                    border: `1px solid ${entry.type === 'AI' ? 'rgba(59,130,246,0.3)' : 'rgba(16,185,129,0.25)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 7, fontWeight: 800, color: entry.type === 'AI' ? C.blue : C.green }}>
+                      {entry.type === 'AI' ? 'AI' : 'U'}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: entry.type === 'AI' ? C.blue : C.green }}>
+                        {entry.type === 'AI' ? 'AI Officer' : 'You'} · R{entry.round}
+                      </span>
+                      {entry.amount && entry.type === 'AI' && (
+                        <span style={{ fontSize: 9, color: C.textMuted, marginLeft: 'auto', flexShrink: 0 }}>{fmtINR(entry.amount)}</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 11, color: C.textSub, lineHeight: 1.5, margin: 0 }}>{entry.message}</p>
+                    <span style={{ fontSize: 9, color: C.textMuted }}>{entry.timestamp}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
         </div>
       </motion.div>
 
-      <motion.button
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
-        onClick={() => triggerConsent('Yes, I agree to the terms and conditions of this loan offer')}
-        style={{ width: '100%', padding: '14px 0', borderRadius: 10, background: C.text, color: C.bg, fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(255,255,255,0.12)', letterSpacing: '0.02em' }}
-      >
-        Accept Offer & Confirm →
+      {/* Voice hint */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 10,
+        background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.16)' }}>
+        <Mic size={13} style={{ color: C.blue, flexShrink: 0 }} />
+        <p style={{ fontSize: 11, color: C.textSub, lineHeight: 1.5, margin: 0 }}>
+          <strong style={{ color: C.text }}>Tap to Speak</strong> on the left to negotiate out loud.
+        </p>
+      </div>
+
+      {/* Accept button */}
+      <motion.button whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.97 }}
+        onClick={() => finalizeNegotiation('Yes, I accept this offer')}
+        style={{ width: '100%', padding: '13px 0', borderRadius: 10, background: C.text, color: C.bg,
+          fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(255,255,255,0.1)', letterSpacing: '0.03em' }}>
+        ✓ Accept Offer
       </motion.button>
     </div>
   );

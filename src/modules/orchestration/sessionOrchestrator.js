@@ -17,6 +17,9 @@
  */
 
 import { log } from '../utils/logger.js';
+import { calculatePolicyOffer, buildOpeningOfferScript } from '../negotiation/negotiationAgent.js';
+import { synthesizeAndPlay } from '../tts/sarvamTTS.js';
+import { addTranscript } from '../transcript/transcriptManager.js';
 
 /* ─── Phase Definitions ──────────────────────────────── */
 export const PHASES = {
@@ -60,7 +63,6 @@ function createInitialState() {
       amount: 250000,
       tenure: 36,
       interestRate: 10.5,
-      negotiationRounds: 0,
     },
     consent: {
       detected: false,
@@ -68,7 +70,15 @@ function createInitialState() {
       timestamp: null,
       hash: null,
     },
-    leftOverlay: null,   // null | 'scanning' | 'scan_success' | 'scan_fail'
+    leftOverlay: null,
+    // Tier 8: Negotiation state
+    negotiation: {
+      policyLimits: null,   // set when bureau completes
+      log: [],              // array of negotiation round entries
+      currentRound: 0,
+      finalTerms: null,     // set when offer is accepted
+      openingSpoken: false, // whether AI has presented offer verbally
+    },
   };
 }
 
@@ -180,7 +190,6 @@ function _triggerBureau() {
   log('ORCHESTRATOR', 'INFO', '→ BUREAU');
   notify();
 
-  // ── HARDCODED MOCK: Simulate credit bureau API (2s delay) ──
   setTimeout(() => {
     const mockBureau = {
       status: 'pass',
@@ -188,9 +197,48 @@ function _triggerBureau() {
       activeLoans: 1,
       dpdHistory: '0 DPD in last 12 months',
     };
-    state = { ...state, bureau: mockBureau, phase: PHASES.OFFER };
-    log('ORCHESTRATOR', 'INFO', '→ OFFER (bureau passed)', mockBureau);
+
+    // ── Policy Engine: compute personalised offer based on bureau data ──
+    // We'll use the income from state if available, else default to 85000
+    const income = 85000; // TODO: pull from stateManager.extractedData.income.value
+    const policyLimits = calculatePolicyOffer({
+      income,
+      creditScore: mockBureau.creditScore,
+      fraudScore: 0,
+    });
+
+    const initialOffer = {
+      amount: policyLimits.initialAmount,
+      tenure: 36,
+      interestRate: policyLimits.interestRate,
+    };
+
+    state = {
+      ...state,
+      bureau: mockBureau,
+      offer: initialOffer,
+      phase: PHASES.OFFER,
+      negotiation: {
+        ...state.negotiation,
+        policyLimits,
+        openingSpoken: false,
+      },
+    };
+    log('ORCHESTRATOR', 'INFO', '→ OFFER (policy engine)', { policyLimits, initialOffer });
     notify();
+
+    // Speak the opening offer after 800ms (let UI paint first)
+    setTimeout(async () => {
+      const script = buildOpeningOfferScript(initialOffer, policyLimits);
+      addTranscript('agent', script, 1.0);
+      window.dispatchEvent(new Event('ai_speaking_start'));
+      try {
+        await synthesizeAndPlay(script);
+      } catch (_) { /* ignore TTS errors */ }
+      window.dispatchEvent(new Event('ai_speaking_end'));
+      state = { ...state, negotiation: { ...state.negotiation, openingSpoken: true } };
+      notify();
+    }, 800);
   }, 2000);
 }
 
@@ -218,16 +266,88 @@ export function triggerConsent(phrase) {
   }, 2000);
 }
 
-/** Update loan offer (during negotiation) */
-export function updateOffer(amount, tenure) {
+/**
+ * Add a negotiation round entry to the log.
+ * @param {{ type: 'AI'|'USER', message: string, amount?: number, tenure?: number }} entry
+ */
+export function addNegotiationRound({ type, message, amount, tenure }) {
+  const roundNum = type === 'AI'
+    ? state.negotiation.currentRound + 1
+    : state.negotiation.currentRound;
+
+  const entry = {
+    round: roundNum,
+    type,
+    message,
+    amount: amount || state.offer.amount,
+    tenure: tenure || state.offer.tenure,
+    timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+  };
+
+  const newCurrentRound = type === 'AI' ? roundNum : state.negotiation.currentRound;
+
+  state = {
+    ...state,
+    negotiation: {
+      ...state.negotiation,
+      log: [...state.negotiation.log, entry],
+      currentRound: newCurrentRound,
+    },
+  };
+  notify();
+}
+
+/**
+ * Apply a counter-offer from the negotiation agent.
+ * Updates the offer amount/tenure on the state.
+ */
+export function applyCounterOffer(amount, tenure) {
+  if (state.phase !== PHASES.OFFER) return;
   state = {
     ...state,
     offer: {
       ...state.offer,
-      amount,
-      tenure,
-      negotiationRounds: state.offer.negotiationRounds + 1,
+      amount: amount || state.offer.amount,
+      tenure: tenure || state.offer.tenure,
     },
+  };
+  log('NEGOTIATION', 'INFO', `Counter offer applied: ₹${amount} / ${tenure}mo`);
+  notify();
+}
+
+/**
+ * Finalise negotiation — locks accepted terms with full audit log.
+ * Called when negotiation agent returns ACTION:ACCEPT.
+ */
+export function finalizeNegotiation(phrase) {
+  if (state.phase !== PHASES.OFFER) return;
+
+  const finalTerms = {
+    amount: state.offer.amount,
+    tenure: state.offer.tenure,
+    interestRate: state.offer.interestRate,
+    totalRounds: state.negotiation.currentRound,
+    acceptedAt: new Date().toISOString(),
+    sessionRef: `AGF-${Date.now().toString(36).toUpperCase()}`,
+    log: state.negotiation.log,
+  };
+
+  state = {
+    ...state,
+    negotiation: { ...state.negotiation, finalTerms },
+  };
+
+  log('NEGOTIATION', 'INFO', '✅ Offer accepted — terms locked', finalTerms);
+
+  // Trigger consent phase
+  triggerConsent(phrase || 'Customer verbally accepted the loan offer');
+}
+
+/** Update loan offer (called from UI slider interaction) */
+export function updateOffer(amount, tenure) {
+  state = {
+    ...state,
+    offer: { ...state.offer, amount, tenure },
   };
   notify();
 }
