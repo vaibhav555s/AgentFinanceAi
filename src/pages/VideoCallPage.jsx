@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import useAudioCapture from '../hooks/useAudioCapture.js';
 import useAIState from '../hooks/useAIState.js';
+import { processVideoFrame } from '../modules/interaction/liveInteraction.js';
 
 
 /* ─── Helpers ────────────────────────────────────────── */
@@ -141,14 +142,18 @@ function ConfBadge({ level }) {
 
 /* ─── Stage 1 — KYC ──────────────────────────────────── */
 function Stage1KYC() {
+  const { extractedData } = useAIState();
   const [visible, setVisible] = useState(0);
+
+  const displayValue = (val) => val === null || val === undefined ? 'Pending...' : val;
+
   const KYC_FIELDS = [
-    { label: 'PRIMARY APPLICANT', value: 'Rahul Sharma', conf: '99.8%' },
-    { label: 'DATE OF BIRTH', value: '14 Aug 1991 (Age 32)', conf: '98.5%' },
-    { label: 'EMPLOYMENT STATUS', value: 'Salaried Executive', conf: '99.1%' },
-    { label: 'VERIFIED INCOME', value: '₹85,000 / mo', conf: '94.2%' },
-    { label: 'PURPOSE OF LOAN', value: 'Capital Expenditure', conf: '97.0%' },
-    { label: 'REQUESTED CAPITAL', value: '₹3,00,000', conf: '99.9%' },
+    { label: 'PRIMARY APPLICANT', value: displayValue(extractedData.name.value), conf: (extractedData.name.confidence * 100).toFixed(1) + '%' },
+    { label: 'AGE (VIDEO ESTIMATE)', value: extractedData.age.value ? `${extractedData.age.value} Years` : 'Analyzing Video...', conf: (extractedData.age.confidence * 100).toFixed(1) + '%' },
+    { label: 'EMPLOYMENT STATUS', value: displayValue(extractedData.employment.value), conf: (extractedData.employment.confidence * 100).toFixed(1) + '%' },
+    { label: 'VERIFIED INCOME', value: extractedData.income.value ? fmtINR(extractedData.income.value) : 'Pending...', conf: (extractedData.income.confidence * 100).toFixed(1) + '%' },
+    { label: 'PURPOSE OF LOAN', value: displayValue(extractedData.purpose.value), conf: (extractedData.purpose.confidence * 100).toFixed(1) + '%' },
+    { label: 'REQUESTED CAPITAL', value: extractedData.loanAmount.value ? fmtINR(extractedData.loanAmount.value) : 'Pending...', conf: (extractedData.loanAmount.confidence * 100).toFixed(1) + '%' },
   ];
 
   useEffect(() => {
@@ -247,60 +252,54 @@ function UploadZone({ label, file, onFile }) {
 
 /* ─── Stage 2: Biometric Verification ────────────────── */
 function Stage2Verify() {
-  const [panFile, setPanFile] = useState(null);
-  const [aadhaarFile, setAadhaarFile] = useState(null);
-  const [livenessStatus, setLivenessStatus] = useState('loading');
-
-  useEffect(() => {
-    const t = setTimeout(() => setLivenessStatus('success'), 3000);
-    return () => clearTimeout(t);
-  }, []);
+  const { extractedData } = useAIState();
+  const age = extractedData.age.value;
 
   return (
     <div className="p-6 flex flex-col gap-5" style={typography}>
-      {/* Uploads */}
-      <div className="p-5" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
-        <div className="flex items-center gap-2 mb-4">
-          <FileText size={14} style={{ color: colors.accent }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Mandatory Documents
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <UploadZone label="PAN Card" file={panFile} onFile={setPanFile} />
-          <UploadZone label="Aadhaar Card" file={aadhaarFile} onFile={setAadhaarFile} />
-        </div>
+      <div className="flex flex-col gap-2">
+        <h3 className="text-xl font-bold" style={{ color: colors.textPrimary, letterSpacing: '-0.02em' }}>
+          Verification
+        </h3>
+        <p style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
+          Our AI is analyzing biometric patterns to confirm your identity and age.
+        </p>
       </div>
 
-      {/* Liveness */}
-      <div className="p-5" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
-        <div className="flex items-center gap-2 mb-4">
-          <Eye size={14} style={{ color: colors.accent }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: colors.textPrimary, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Liveness Protocol
-          </span>
-        </div>
+      <div className="flex flex-col gap-4">
         <AnimatePresence mode="wait">
-          {livenessStatus === 'loading' ? (
-            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-4 py-2">
-              <div className="relative flex items-center justify-center w-6 h-6">
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }} className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#38BDF8]" />
+          {age ? (
+            <motion.div
+              key="match"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-5 flex flex-col items-center gap-4 text-center"
+              style={{ background: 'rgba(52, 211, 153, 0.05)', borderRadius: 16, border: '1px solid rgba(52, 211, 153, 0.2)' }}
+            >
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.4)' }}>
+                <ScanFace size={32} style={{ color: colors.success }} />
               </div>
-              <span style={{ fontSize: 12, color: colors.textSecondary, letterSpacing: '0.02em' }}>Correlating facial landmarks...</span>
+              <div>
+                <div style={{ fontSize: 11, color: colors.success, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>BIOMETRIC MATCH</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: colors.textPrimary }}>{age} Years</div>
+              </div>
             </motion.div>
           ) : (
-            <motion.div key="success" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={16} style={{ color: colors.success }} />
-                <span style={{ fontSize: 13, fontWeight: 500, color: colors.success }}>Liveness Confirmed</span>
-              </div>
-              <span style={{ fontSize: 11, color: colors.textMuted }}>Confidence Score: 0.994 • Neural Model: Alpha-v4.2</span>
+            <motion.div
+              key="waiting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="p-8 flex flex-col items-center gap-4 text-center border-2 border-dashed"
+              style={{ borderColor: 'rgba(56, 189, 248, 0.2)', borderRadius: 16, background: 'rgba(56, 189, 248, 0.02)' }}
+            >
+              <Activity size={32} style={{ color: colors.accent }} className="animate-pulse" />
+              <div style={{ fontSize: 13, color: colors.textSecondary }}>Waiting for visual demographic confirmation...</div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Age verification */}
+      {/* Age verification details */}
       <div className="p-5" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${colors.border}` }}>
         <div className="flex items-center gap-2 mb-4">
           <ScanFace size={14} style={{ color: colors.accent }} />
@@ -311,12 +310,16 @@ function Stage2Verify() {
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <span style={{ fontSize: 9, color: colors.textMuted, letterSpacing: '0.08em' }}>ESTIMATED AGE</span>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.textPrimary }}>30–33 Years</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: colors.textPrimary }}>
+              {age ? `${age}–${age + 3} Years` : 'Scanning...'}
+            </span>
           </div>
           <div className="h-6 w-px" style={{ background: colors.border }} />
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 11, color: colors.textSecondary }}>Threshold Match</span>
-            <div className="px-2 py-0.5 rounded" style={{ background: 'rgba(52, 211, 153, 0.1)', color: colors.success, fontSize: 10, fontWeight: 600 }}>✓ VERIFIED</div>
+            <div className="px-2 py-0.5 rounded" style={{ background: age ? 'rgba(52, 211, 153, 0.1)' : 'rgba(255,255,255,0.05)', color: age ? colors.success : colors.textMuted, fontSize: 10, fontWeight: 600 }}>
+              {age ? '✓ VERIFIED' : 'PENDING'}
+            </div>
           </div>
         </div>
       </div>
@@ -326,13 +329,20 @@ function Stage2Verify() {
 
 /* ─── Stage 3: Capital Structuring (Offer) ───────────── */
 function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept }) {
+  const { extractedData } = useAIState();
   const emi = calcEMI(loanAmount, 12, tenure);
   const minLoan = 100000;
   const maxLoan = 500000;
-  const minTenure = 12;
-  const maxTenure = 84;
+
+  // Set initial loan amount from AI extraction if not set
+  useEffect(() => {
+    if (extractedData.loanAmount.value && loanAmount === 250000) {
+      setLoanAmount(extractedData.loanAmount.value);
+    }
+  }, [extractedData.loanAmount.value]);
+
   const loanFill = ((loanAmount - minLoan) / (maxLoan - minLoan)) * 100;
-  const tenureFill = ((tenure - minTenure) / (maxTenure - minTenure)) * 100;
+  const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
 
   return (
     <div className="p-6 flex flex-col gap-6" style={typography}>
@@ -427,14 +437,16 @@ function Stage3Offer({ loanAmount, setLoanAmount, tenure, setTenure, onAccept })
 }
 
 /* ─── Stage 4 — Consent ──────────────────────────────── */
-function Stage4Consent({ token }) {
-  const hash = 'a3f9bc2e847d1c6f4b8e2d9a7c3f1b5e9d2c8a4f7b1e6c3d9a5f2b8e4d7c1a3f';
-  const timestamp = '14:32:08';
+function Stage4Consent({ token, onComplete }) {
+  const { consent } = useAIState();
+  const hash = consent.locked ? 'a3f9bc2e847d1c6f4b8e2d9a7c3f1b5e9d2c8a4f7b1e6c3d9a5f2b8e4d7c1a3f' : 'WAITING_FOR_HASH_GEN...';
+  const timestamp = consent.timestamp ? new Date(consent.timestamp).toLocaleTimeString() : 'Pending';
 
   function downloadConsent() {
+    if (!consent.locked) return;
     const blob = new Blob([
       `CONSENT TRAIL — AgentFinance AI\n\nSession: ${token}\nTimestamp: ${timestamp}\n\n` +
-      `Consent Phrase: "Yes, I agree to the terms and conditions of this loan offer"\n\n` +
+      `Consent Phrase: "${consent.phrase}"\n\n` +
       `SHA-256 Hash: ${hash}\n\nTamper-evident record. Do not modify.`
     ], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -452,73 +464,49 @@ function Stage4Consent({ token }) {
         </h3>
       </div>
 
-      {/* Detected phrase */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
         className="glass-card p-4"
-        style={{ borderRadius: 12, borderLeft: '3px solid #3B82F6' }}
+        style={{
+          borderRadius: 12,
+          borderLeft: `3px solid ${consent.locked ? colors.success : colors.accent}`,
+          background: consent.locked ? 'rgba(52, 211, 153, 0.03)' : 'rgba(255,255,255,0.01)'
+        }}
       >
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 8 }}>
-          DETECTED CONSENT PHRASE
+        <div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', marginBottom: 8 }}>
+          {consent.locked ? 'VERIFIED CONSENT PHRASE' : 'LISTENING FOR CONSENT...'}
         </div>
-        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)', fontStyle: 'italic', marginBottom: 8 }}>
-          "Yes, I agree to the terms and conditions of this loan offer."
+        <p className="text-sm leading-relaxed" style={{ color: colors.textPrimary, fontStyle: 'italic', marginBottom: 8 }}>
+          {consent.phrase ? `"${consent.phrase}"` : '"Please state your agreement to the terms..."'}
         </p>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          Captured at {timestamp} • Session #{token}
+        <div style={{ fontSize: 11, color: colors.textMuted }}>
+          {consent.locked ? `Captured at ${timestamp}` : 'Signal processing active...'}
         </div>
       </motion.div>
 
-      {/* Hash */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="glass-card p-4"
-        style={{ borderRadius: 12 }}
-      >
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 6 }}>
-          CONSENT HASH (SHA-256)
-        </div>
-        <div
-          style={{
-            fontFamily: 'monospace', fontSize: 11, color: '#94A3B8',
-            letterSpacing: '0.05em', wordBreak: 'break-all', lineHeight: 1.6, marginBottom: 8
-          }}
-        >
-          {hash}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <ShieldCheck size={12} style={{ color: '#10B981' }} />
-          <span style={{ fontSize: 11, color: '#10B981' }}>Tamper-evident record stored</span>
-        </div>
-      </motion.div>
+      {consent.locked ? (
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col gap-4">
+          <div className="glass-card p-4" style={{ borderRadius: 12 }}>
+            <div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: '0.1em', marginBottom: 6 }}>CONSENT HASH (SHA-256)</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#94A3B8', wordBreak: 'break-all', marginBottom: 8 }}>{hash}</div>
+            <div className="flex items-center gap-1.5"><ShieldCheck size={12} style={{ color: colors.success }} /><span style={{ fontSize: 11, color: colors.success }}>Records anchored</span></div>
+          </div>
 
-      {/* Status badge */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.6 }}
-        className="flex items-center justify-center gap-2 py-3 rounded-xl"
-        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
-      >
-        <CheckCircle2 size={16} style={{ color: '#10B981' }} />
-        <span className="font-bold" style={{ fontSize: 14, color: '#10B981', letterSpacing: '0.02em' }}>
-          CONSENT VERIFIED ✓
-        </span>
-      </motion.div>
-
-      {/* Export button */}
-      <button
-        className="btn-outline flex items-center justify-center gap-2"
-        style={{ height: 44, fontSize: 13 }}
-        onClick={downloadConsent}
-      >
-        <Download size={14} />
-        Export Consent Trail
-      </button>
+          <button
+            onClick={onComplete}
+            className="w-full py-4 flex items-center justify-center gap-2 font-semibold"
+            style={{ background: colors.success, color: colors.bgBase, borderRadius: 10, fontSize: 13, cursor: 'pointer' }}
+          >
+            EXECUTE DISBURSEMENT <ArrowRight size={14} />
+          </button>
+        </motion.div>
+      ) : (
+        <div className="flex flex-col items-center gap-4 p-8 text-center border-2 border-dashed" style={{ borderColor: 'rgba(255,255,255,0.05)', borderRadius: 16 }}>
+          <Activity size={32} style={{ color: colors.accent }} className="animate-pulse" />
+          <span style={{ fontSize: 12, color: colors.textSecondary }}>Waiting for vocal affirmation to seal the contract.</span>
+        </div>
+      )}
     </div>
   );
 }
