@@ -562,18 +562,47 @@ function Stage5Complete({ token, loanAmount, tenure }) {
 
 
 
+/* ─── Video Analysis Hook ─────────────────────── */
+function useVideoAnalysis(active, videoRef) {
+  useEffect(() => {
+    if (!active || !videoRef.current) return;
+
+    const canvas = document.createElement('canvas');
+    let intervalId = null;
+
+    const capture = () => {
+      const video = videoRef.current;
+      if (video && video.readyState >= 2) {
+        console.log('[VIDEO_ANALYSIS] Capturing frame from live stream...');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        // Handle mirrored local preview if necessary, but for analysis raw is fine
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL('image/jpeg', 0.8);
+        processVideoFrame(base64);
+      }
+    };
+
+    // First capture after 3s, then every 12s
+    const startTimeout = setTimeout(capture, 3000);
+    intervalId = setInterval(capture, 12000);
+
+    return () => {
+      clearTimeout(startTimeout);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [active, videoRef]);
+}
+
 /* ─── Camera Frame ────────────────────────────── */
-function CameraFrame({ isVideoOn, onCameraReady }) {
-  const videoRef = useRef(null);
+function CameraFrame({ isVideoOn, videoRef, onCameraReady }) {
   const [stream, setStream] = useState(null);
 
   // We ask for media once, and toggle tracks on/off when props change
   useEffect(() => {
     let activeStream = null;
-    
-    // We only need to request video if isVideoOn. 
-    // Usually Audio is handled by another hook but we can request both if wanted.
-    // For just showing local camera video:
+
     if (isVideoOn) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(s => {
@@ -626,7 +655,7 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
 
 
 /* ─── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ isVideoOn, setIsVideoOn, isListening, micError, isProcessing, startRecording, stopRecording, onJoined }) {
+function LeftPanel({ isVideoOn, setIsVideoOn, isListening, micError, isProcessing, startRecording, stopRecording, onJoined, videoRef }) {
   const [callJoined, setCallJoined] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
 
@@ -655,6 +684,7 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, micError, isProcessin
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         <CameraFrame
           isVideoOn={isVideoOn}
+          videoRef={videoRef}
           onCameraReady={() => { setCallJoined(true); onJoined?.(); }}
         />
       </div>
@@ -874,9 +904,15 @@ export default function VideoCallPage() {
   // Gate audio capture on Jitsi join — prevents competing for mic before Jitsi connects
   const [sessionJoined, setSessionJoined] = useState(false);
 
+  // Shared video reference for UI and Analysis
+  const videoRef = useRef(null);
+
   // ─── AI Hooks ─────────────────────────────────────────
   const { isListening, micError, isProcessing, startRecording, stopRecording } = useAudioCapture();
   const aiState = useAIState({ debounceMs: 500 });
+
+  // Background Video Analysis
+  useVideoAnalysis(sessionJoined && isVideoOn, videoRef);
 
   useEffect(() => {
     document.body.style.backgroundColor = colors.bgBase;
@@ -898,6 +934,7 @@ export default function VideoCallPage() {
           isListening={isListening} micError={micError} isProcessing={isProcessing}
           startRecording={startRecording} stopRecording={stopRecording}
           onJoined={() => setSessionJoined(true)}
+          videoRef={videoRef}
         />
         <RightPanel
           currentStage={currentStage} setCurrentStage={setCurrentStage}
@@ -922,6 +959,7 @@ export default function VideoCallPage() {
             isListening={isListening} micError={micError} isProcessing={isProcessing}
             startRecording={startRecording} stopRecording={stopRecording}
             onJoined={() => setSessionJoined(true)}
+            videoRef={videoRef}
           />
         </div>
         {/* Context panel — fills rest */}
