@@ -35,6 +35,15 @@ import {
   getStructuredOutput,
 } from '../state/stateManager.js';
 import { log } from '../utils/logger.js';
+import {
+  getPhase,
+  getOrchestratorState,
+  addNegotiationRound,
+  applyCounterOffer,
+  finalizeNegotiation,
+  PHASES,
+} from '../orchestration/sessionOrchestrator.js';
+import { processNegotiation } from '../negotiation/negotiationAgent.js';
 
 /* ─── Debounce Utility ───────────────────────────────── */
 
@@ -189,22 +198,32 @@ export async function processAudio(audioBlob) {
 
     if (!sttResult.text || sttResult.text.trim().length === 0) {
       log('INTERACTION', 'WARN', 'STT returned empty text — skipping');
-      return {
-        transcribedText: '',
-        confidence: 0,
-        structuredOutput: getStructuredOutput(),
-      };
+      return { transcribedText: '', confidence: 0, structuredOutput: getStructuredOutput() };
     }
 
-    // Step 2: Add to transcript
     addTranscript('user', sttResult.text, sttResult.confidence);
     incrementUtterances();
 
-    // Step 3: Run AI processing immediately (no debounce for PTT)
+    // ─── NEGOTIATION PHASE ROUTING ────────────────────────────────────────
+    // When in OFFER phase, bypass the KYC extraction pipeline entirely.
+    // Route the user's speech to the LLM negotiation agent instead.
+    if (getPhase() === PHASES.OFFER) {
+      await _handleNegotiationTurn(sttResult.text);
+      return { transcribedText: sttResult.text, confidence: sttResult.confidence, structuredOutput: getStructuredOutput() };
+    }
+    // ─────────────────────────────────────────────────────────────
+
+    // Ignore normal speech processing in non-CHAT phases (like AADHAAR upload or COMPLETE)
+    // This prevents the AI from repeating "Please upload your Aadhaar card" while user is doing so.
+    if (getPhase() !== PHASES.CHAT) {
+      log('INTERACTION', 'INFO', `Ignoring speech input in phase ${getPhase()}`);
+      return { transcribedText: sttResult.text, confidence: sttResult.confidence, structuredOutput: getStructuredOutput() };
+    }
+
+    // Standard KYC pipeline (CHAT phase)
     debouncedPipeline.cancel();
     await runAIPipeline();
 
-    // Return current state
     return {
       transcribedText: sttResult.text,
       confidence: sttResult.confidence,
@@ -214,12 +233,75 @@ export async function processAudio(audioBlob) {
   } catch (error) {
     incrementErrors();
     log('INTERACTION', 'ERROR', 'processAudio failed', error.message);
-    return {
-      transcribedText: '',
-      confidence: 0,
-      structuredOutput: getStructuredOutput(),
-    };
+    return { transcribedText: '', confidence: 0, structuredOutput: getStructuredOutput() };
   }
+}
+
+/**
+ * Handle one turn of the loan negotiation conversation.
+ * Called when user speaks during OFFER phase.
+ * @param {string} userText
+ */
+async function _handleNegotiationTurn(userText) {
+  const orchState = getOrchestratorState();
+  const { offer, negotiation } = orchState;
+  const { policyLimits, log: negLog } = negotiation;
+
+  if (!policyLimits) {
+    log('NEGOTIATION', 'WARN', 'No policy limits set — skipping negotiation turn');
+    return;
+  }
+
+  // Log user's message as a negotiation round entry
+  addNegotiationRound({ type: 'USER', message: userText });
+
+  // Call negotiation LLM
+  const result = await processNegotiation({
+    userText,
+    currentOffer: offer,
+    policyLimits,
+    negotiationLog: negLog,
+  });
+
+  if (!result) {
+    log('NEGOTIATION', 'WARN', 'Negotiation agent returned null');
+    return;
+  }
+
+  const { message, action, newAmount, newTenure, newRate, round } = result;
+
+  // Log the AI's negotiation response
+  addNegotiationRound({
+    type: 'AI',
+    message,
+    amount: newAmount || offer.amount,
+    tenure: newTenure || offer.tenure,
+    rate: newRate || offer.interestRate,
+  });
+
+  if (action === 'COUNTER') {
+    // Apply the new counter-offer to state
+    if (newAmount || newTenure || newRate) {
+      applyCounterOffer(newAmount || offer.amount, newTenure || offer.tenure, newRate || offer.interestRate);
+    }
+  } else if (action === 'ACCEPT') {
+    // Finalise and move to consent
+    finalizeNegotiation(userText);
+  }
+
+  // Speak the AI response via TTS
+  if (message) {
+    addTranscript('agent', message, 1.0);
+    window.dispatchEvent(new Event('ai_speaking_start'));
+    try {
+      await synthesizeAndPlay(message);
+    } catch (err) {
+      log('NEGOTIATION', 'ERROR', 'TTS failed', err.message);
+    }
+    window.dispatchEvent(new Event('ai_speaking_end'));
+  }
+
+  log('NEGOTIATION', 'INFO', `Round ${round} complete — action: ${action}`, { newAmount, newTenure, newRate });
 }
 
 /**

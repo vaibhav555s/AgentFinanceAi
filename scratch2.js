@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Video, VideoOff, Lock, Upload, Download,
   CheckCircle2, ShieldCheck, Zap, Activity,
   Fingerprint, ScanFace, Banknote, Mic,
-  AlertTriangle, RefreshCw, User, Check,
-  Star, Shield
+  AlertTriangle, RefreshCw, User,
 } from 'lucide-react';
 import useAudioCapture from '../hooks/useAudioCapture.js';
 import useAIState from '../hooks/useAIState.js';
@@ -17,11 +16,10 @@ import {
   retryAadhaarUpload,
   updateOffer,
   triggerConsent,
-  finalizeNegotiation,
   PHASES,
 } from '../modules/orchestration/sessionOrchestrator.js';
 
-/* ─── Helpers ────────────────────────────────────────── */
+/* ─── Helpers ─────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
   const r = annualRate / 12 / 100;
   if (r === 0) return Math.round(principal / months);
@@ -31,24 +29,7 @@ function fmtINR(n) {
   return '₹' + Number(n).toLocaleString('en-IN');
 }
 
-/* ─── Animated Number Component ─────────────────────── */
-function AnimatedNumber({ value, type = 'number' }) {
-  const spring = useSpring(value, { mass: 0.8, stiffness: 75, damping: 15 });
-  const display = useTransform(spring, (current) => {
-    if (type === 'currency') return fmtINR(Math.round(current));
-    if (type === 'percent') return current.toFixed(1) + '%';
-    if (type === 'mo') return Math.round(current) + ' mo';
-    return Math.round(current);
-  });
-
-  useEffect(() => {
-    spring.set(value);
-  }, [spring, value]);
-
-  return <motion.span>{display}</motion.span>;
-}
-
-/* ─── Color Tokens ──────────────────────────────────── */
+/* ─── Color Tokens ────────────────────────────────────── */
 const C = {
   bg: '#080810',
   panel: '#0A0A12',
@@ -63,7 +44,7 @@ const C = {
   red: '#EF4444',
 };
 
-/* ─── Progress Steps ───────────────────────────────── */
+/* ─── Progress Steps ──────────────────────────────────── */
 const STEPS = [
   { phase: PHASES.CHAT, icon: Fingerprint, label: 'IDENTIFY' },
   { phase: PHASES.AADHAAR_UPLOAD, icon: Upload, label: 'VERIFY' },
@@ -90,7 +71,7 @@ function phaseToStep(phase) {
   return 5;
 }
 
-/* ─── Typewriter ────────────────────────────────────── */
+/* ─── Typewriter ──────────────────────────────────────── */
 function Typewriter({ phase }) {
   const captions = {
     [PHASES.CHAT]: ['Listening to your response...', 'Extracting financial data...', 'Analyzing your profile...'],
@@ -135,7 +116,7 @@ function Typewriter({ phase }) {
   );
 }
 
-/* ─── Speaking Bars ─────────────────────────────────── */
+/* ─── Speaking Bars ───────────────────────────────────── */
 function SpeakingBars() {
   return (
     <div className="flex items-center gap-[3px] h-8">
@@ -151,7 +132,7 @@ function SpeakingBars() {
   );
 }
 
-/* ─── Confidence Badge ─────────────────────────────── */
+/* ─── Confidence Badge ────────────────────────────────── */
 function ConfBadge({ level }) {
   const cfg = {
     High: { color: C.green, bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' },
@@ -165,7 +146,7 @@ function ConfBadge({ level }) {
   );
 }
 
-/* ─── Camera Frame ──────────────────────────────────── */
+/* ─── Camera Frame ────────────────────────────────────── */
 function CameraFrame({ isVideoOn, onCameraReady }) {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -203,7 +184,7 @@ function CameraFrame({ isVideoOn, onCameraReady }) {
   );
 }
 
-/* ─── Face Scan Overlay ────────────────────────────── */
+/* ─── Face Scan Overlay ───────────────────────────────── */
 function FaceScanOverlay({ overlay }) {
   if (!overlay) return null;
   return (
@@ -265,7 +246,7 @@ function FaceScanOverlay({ overlay }) {
   );
 }
 
-/* ─── Left Panel ────────────────────────────────────── */
+/* ─── Left Panel ──────────────────────────────────────── */
 function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRecording, stopRecording, phase, leftOverlay, onJoined }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
 
@@ -279,12 +260,12 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRe
 
   return (
     <div className="relative flex flex-col" style={{ flex: '0 0 62%', background: 'radial-gradient(ellipse at 50% 40%, #0F1628 0%, #0A0A14 60%, #060610 100%)', borderRight: `1px solid ${C.border}`, overflow: 'hidden' }}>
-      {/* Camera â€” pointer-events none so it never blocks button clicks */}
+      {/* Camera — pointer-events none so it never blocks button clicks */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
         <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} />
       </div>
 
-      {/* Face scan overlay â€” only captures events when actively shown */}
+      {/* Face scan overlay — only captures events when actively shown */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 15, pointerEvents: leftOverlay ? 'auto' : 'none' }}>
         <FaceScanOverlay overlay={leftOverlay} />
       </div>
@@ -363,11 +344,11 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRe
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    RIGHT PANEL COMPONENTS
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+══════════════════════════════════════════════════════════ */
 
-/* ─── Phase: CHAT ─ Dynamic KYC Extraction ────────── */
+/* ─── Phase: CHAT — Dynamic KYC Extraction ────────────── */
 function PanelChat({ kycFields }) {
   return (
     <div className="p-5 flex flex-col gap-3">
@@ -398,7 +379,7 @@ function PanelChat({ kycFields }) {
         </AnimatePresence>
 
         {/* Placeholder rows for unfilled */}
-        {kycFields.filter(f => f.value === '—' || !f.value).map(f => (
+        {kycFields.filter(f => !f.value || f.value === '—').map(f => (
           <div key={f.label} style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.01)', border: `1px dashed rgba(255,255,255,0.05)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</span>
             <motion.div animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 60, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)' }} />
@@ -409,7 +390,7 @@ function PanelChat({ kycFields }) {
   );
 }
 
-/* ─── Phase: AADHAAR_UPLOAD ──────────────────────── */
+/* ─── Phase: AADHAAR_UPLOAD ────────────────────── */
 function PanelAadhaarUpload({ aadhaar }) {
   const inputRef = useRef(null);
   const [file, setFile] = useState(null);
@@ -499,7 +480,7 @@ function PanelAadhaarUpload({ aadhaar }) {
   );
 }
 
-/* ─── Phase: AADHAAR_VERIFY ───────────────────────── */
+/* ─── Phase: AADHAAR_VERIFY ───────────────────────────── */
 function PanelAadhaarVerify() {
   const steps = ['Reading document data', 'Verifying security features', 'Cross-referencing fields', 'Extracting identity info'];
   const [step, setStep] = useState(0);
@@ -540,7 +521,7 @@ function PanelAadhaarVerify() {
   );
 }
 
-/* ─── Phase: AADHAAR_DONE ─────────────────────────── */
+/* ─── Phase: AADHAAR_DONE ─────────────────────────────── */
 function PanelAadhaarDone({ aadhaar, kycMismatch }) {
   const fields = [
     { label: 'NAME', value: aadhaar.name, mismatch: kycMismatch?.nameMismatch },
@@ -577,7 +558,7 @@ function PanelAadhaarDone({ aadhaar, kycMismatch }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {kycMismatch.nameMismatch && (
               <div style={{ fontSize: 11, color: C.textSub }}>
-                <span style={{ color: C.red }}>Name:</span> Stated â€œ{kycMismatch.statedName}â€ â‰  Aadhaar â€œ{kycMismatch.aadhaarName}â€
+                <span style={{ color: C.red }}>Name:</span> Stated “{kycMismatch.statedName}” ≠ Aadhaar “{kycMismatch.aadhaarName}”
               </div>
             )}
             {kycMismatch.ageMismatch && (
@@ -657,11 +638,11 @@ function PanelFaceScan({ faceAge, phase }) {
   );
 }
 
-/* --- Phase: BUREAU -------------------------------------- */
+/* ─── Phase: BUREAU ───────────────────────────────────── */
 function PanelBureau({ bureau, policy }) {
   const checks = ['Connecting to CIBIL bureau', 'Pulling credit report', 'Evaluating DPD history', 'Checking written-off accounts', 'Running policy engine'];
   const [step, setStep] = useState(0);
-  const isFailed = bureau?.status === 'fail' || policy?.decision === 'FAIL';
+  const isFailed = bureau?.status === 'fail' && policy?.decision;
 
   useEffect(() => {
     if (!isFailed && step < checks.length - 1) {
@@ -670,6 +651,7 @@ function PanelBureau({ bureau, policy }) {
     }
   }, [step, checks.length, isFailed]);
 
+  // If bureau has returned a FAIL, show the rejection + audit trail
   if (isFailed) {
     return (
       <div className="p-5 flex flex-col gap-4" style={{ paddingTop: 24 }}>
@@ -683,6 +665,7 @@ function PanelBureau({ bureau, policy }) {
           </p>
         </div>
 
+        {/* Bureau Summary */}
         <div style={{ padding: '14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 10 }}>BUREAU REPORT</div>
           {[
@@ -698,17 +681,22 @@ function PanelBureau({ bureau, policy }) {
           ))}
         </div>
 
+        {/* Policy Audit Trail */}
         {policy?.rules && (
           <div style={{ padding: '14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 10 }}>POLICY AUDIT TRAIL</div>
             {policy.rules.map((r, i) => (
-              <div key={r.rule} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < policy.rules.length - 1 ? `1px solid rgba(255,255,255,0.04)` : 'none' }}>
-                <span style={{ fontSize: 12 }}>{r.result === 'pass' ? '✅' : r.result === 'fail' ? '❌' : '⚠️'}</span>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: C.text }}>{r.rule}</span>
-                  <p style={{ fontSize: 9, color: C.textMuted, marginTop: 1 }}>{r.explanation}</p>
+              <motion.div key={r.rule} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: i < policy.rules.length - 1 ? `1px solid rgba(255,255,255,0.04)` : 'none' }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, background: r.result === 'pass' ? 'rgba(16,185,129,0.15)' : r.result === 'fail' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', border: `1px solid ${r.result === 'pass' ? C.green : r.result === 'fail' ? C.red : C.yellow}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {r.result === 'pass' ? <CheckCircle2 size={9} style={{ color: C.green }} /> : r.result === 'fail' ? <AlertTriangle size={9} style={{ color: C.red }} /> : <Activity size={9} style={{ color: C.yellow }} />}
                 </div>
-              </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.text, marginBottom: 2 }}>{r.rule.replace(/_/g, ' ').toUpperCase()}</div>
+                  <div style={{ fontSize: 10, color: C.textSub, lineHeight: 1.5 }}>{r.explanation}</div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: r.result === 'pass' ? C.green : r.result === 'fail' ? C.red : C.yellow, flexShrink: 0, textTransform: 'uppercase' }}>{r.result}</span>
+              </motion.div>
             ))}
           </div>
         )}
@@ -716,28 +704,29 @@ function PanelBureau({ bureau, policy }) {
     );
   }
 
+  // Loading animation
   return (
-    <div className="p-5 flex flex-col gap-6" style={{ paddingTop: 40 }}>
-      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-          style={{ width: 100, height: 100, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.1)', borderTopColor: C.blue }} />
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <ShieldCheck size={32} style={{ color: C.blue }} />
-        </div>
-      </div>
-
+    <div className="p-5 flex flex-col gap-5 items-center" style={{ paddingTop: 40 }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
+        style={{ width: 60, height: 60, borderRadius: '50%', border: `3px solid rgba(245,158,11,0.15)`, borderTopColor: C.yellow }}
+      />
       <div style={{ textAlign: 'center' }}>
-        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8 }}>Bureau Integration</h3>
-        <p style={{ fontSize: 12, color: C.textSub }}>Fetching real-time credit data and evaluating policy gates...</p>
+        <h3 style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>Credit Bureau Check</h3>
+        <AnimatePresence mode="wait">
+          <motion.p key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            style={{ fontSize: 12, color: C.textSub }}>
+            {checks[step]}...
+          </motion.p>
+        </AnimatePresence>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {checks.map((c, i) => (
-          <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: step >= i ? 1 : 0.3, transition: 'opacity 0.3s' }}>
-            <div style={{ width: 16, height: 16, borderRadius: '50%', background: step > i ? C.green : step === i ? 'rgba(59,130,246,0.1)' : 'transparent', border: `1px solid ${step > i ? C.green : step === i ? C.blue : 'rgba(255,255,255,0.1)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {step > i ? <Check size={10} style={{ color: '#000' }} /> : step === i && <div style={{ width: 4, height: 4, borderRadius: '50%', background: C.blue }} />}
+      <div className="w-full flex flex-col gap-2">
+        {checks.map((s, i) => (
+          <div key={s} className="flex items-center gap-3">
+            <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: i <= step ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${i <= step ? C.yellow : C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.4s' }}>
+              {i <= step ? <CheckCircle2 size={10} style={{ color: C.yellow }} /> : <div style={{ width: 3, height: 3, borderRadius: '50%', background: C.textMuted }} />}
             </div>
-            <span style={{ fontSize: 11, color: step === i ? C.text : C.textSub, fontWeight: step === i ? 600 : 400 }}>{c}</span>
+            <span style={{ fontSize: 11, color: i <= step ? C.text : C.textMuted, transition: 'color 0.4s' }}>{s}</span>
           </div>
         ))}
       </div>
@@ -745,171 +734,105 @@ function PanelBureau({ bureau, policy }) {
   );
 }
 
-/* --- Phase: OFFER -------------------------------------- */
-function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
+/* ─── Phase: OFFER ────────────────────────────────────── */
+function PanelOffer({ offer, bureau, policy, onUpdateOffer }) {
+  const [amount, setAmount] = useState(offer.amount);
+  const [tenure, setTenure] = useState(offer.tenure);
   const [showAudit, setShowAudit] = useState(false);
-  const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
-  const { policyLimits, log: negLog, currentRound } = negotiation || {};
-  const maxAmount = policyLimits?.maxAmount || 500000;
-  const eligibilityPct = Math.min(100, Math.round((offer.amount / maxAmount) * 100));
+  const emi = calcEMI(amount, offer.interestRate, tenure);
+  const loanFill = ((amount - 100000) / (500000 - 100000)) * 100;
+  const tenureFill = ((tenure - 12) / (84 - 12)) * 100;
   const isRefer = policy?.decision === 'REFER';
 
-  const renderIcon = (name) => {
-    switch (name) {
-      case 'star': return <Star size={14} style={{ color: C.yellow }} />;
-      case 'zap': return <Zap size={14} style={{ color: C.blue }} />;
-      case 'shield': return <Shield size={14} style={{ color: C.green }} />;
-      default: return <Star size={14} style={{ color: C.text }} />;
-    }
-  };
-
   return (
-    <div className="p-3 flex flex-col gap-3">
-      {/* Intelligence Header */}
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        style={{ padding: '12px 14px', borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, letterSpacing: '0.12em' }}>ENGINE INTELLIGENCE</span>
-          <div style={{ padding: '2px 8px', borderRadius: 20, background: isRefer ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', border: `1px solid ${isRefer ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'}`, fontSize: 8, fontWeight: 800, color: isRefer ? C.yellow : C.green }}>
-            {isRefer ? 'MANUAL REVIEW REQ' : 'POLICY PASSED'}
+    <div className="p-5 flex flex-col gap-4">
+      {/* Bureau + Policy decision */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderRadius: 10, background: isRefer ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.08)', border: `1px solid ${isRefer ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.2)'}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ShieldCheck size={16} style={{ color: isRefer ? C.yellow : C.green }} />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: isRefer ? C.yellow : C.green }}>
+              Credit Score: {bureau.creditScore} — {isRefer ? 'Manual Review ⚠' : 'Eligible ✓'}
+            </span>
+            <p style={{ fontSize: 10, color: C.textSub, marginTop: 1 }}>{bureau.dpdHistory}</p>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[
-            { icon: ShieldCheck, label: 'Credit', val: bureau.creditScore, color: C.green },
-            { icon: Activity, label: 'Risk', val: isRefer ? 'Medium' : 'Low', color: isRefer ? C.yellow : C.blue },
-            { icon: Banknote, label: 'Income', val: 'Verified', color: C.yellow }
-          ].map((inf, idx) => (
-            <motion.div key={idx} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * idx }}
-              style={{ flex: 1, padding: '7px 4px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 2 }}><inf.icon size={11} style={{ color: inf.color }} /></div>
-              <div style={{ fontSize: 9, color: C.text, fontWeight: 700, marginBottom: 1 }}>{inf.val}</div>
-              <div style={{ fontSize: 7, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>{inf.label}</div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Live offer card */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-        style={{
-          position: 'relative', overflow: 'hidden', padding: '18px 20px', borderRadius: 20,
-          background: 'linear-gradient(135deg, rgba(15,25,55,0.98) 0%, rgba(10,10,18,1) 100%)',
-          border: `1px solid ${currentRound > 0 ? C.blue : C.borderHi}`,
-          boxShadow: currentRound > 0 ? `0 0 40px rgba(59,130,246,0.15)` : '0 20px 50px rgba(0,0,0,0.5)'
-        }}>
-
-        <AnimatePresence>
-          {currentRound > 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: [0, 0.1, 0] }} exit={{ opacity: 0 }} transition={{ duration: 2, repeat: Infinity }}
-              style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at center, ${C.blue}, transparent)` }} />
-          )}
-        </AnimatePresence>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, position: 'relative' }}>
-          <motion.div animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }} transition={{ duration: 2, repeat: Infinity }}
-            style={{ width: 6, height: 6, borderRadius: '50%', background: C.blue, boxShadow: `0 0 10px ${C.blue}` }} />
-          <span style={{ fontSize: 9, fontWeight: 800, color: C.blue, letterSpacing: '0.12em' }}>
-            {currentRound > 0 ? `NEGOTIATION ACTIVE • ROUND ${currentRound}` : 'PERSONALISED LOAN OFFER'}
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: isRefer ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: isRefer ? C.yellow : C.green, letterSpacing: '0.08em' }}>
+            {policy?.decision || 'PASS'}
           </span>
         </div>
-
-        <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.12em', marginBottom: 3 }}>APPROVED AMOUNT</div>
-        <div style={{ fontSize: 38, fontWeight: 800, color: C.text, letterSpacing: '-0.04em', marginBottom: 8, fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
-          <AnimatedNumber value={offer.amount} type="currency" />
-        </div>
-
-        {policyLimits && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 9, color: C.textSub, fontWeight: 600 }}>Policy Headroom</span>
-              <span style={{ fontSize: 9, fontWeight: 800, color: eligibilityPct > 95 ? C.yellow : C.green }}>
-                {eligibilityPct}% OF MAX LIMIT
-              </span>
-            </div>
-            <div style={{ height: 5, borderRadius: 10, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-              <motion.div initial={{ width: 0 }} animate={{ width: `${eligibilityPct}%` }} transition={{ duration: 1.2, ease: 'circOut' }}
-                style={{ height: '100%', borderRadius: 10, background: eligibilityPct > 95 ? `linear-gradient(90deg, ${C.blue}, ${C.yellow})` : `linear-gradient(90deg, ${C.blue}, #00d2ff)` }} />
-            </div>
-            {eligibilityPct >= 100 && (
-              <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
-                style={{ fontSize: 8, color: C.yellow, marginTop: 7, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(245,158,11,0.05)', padding: '4px 8px', borderRadius: 4 }}>
-                <AlertTriangle size={10} /> {policyLimits.policyNote}
-              </motion.div>
-            )}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
+        {/* Quick bureau stats */}
+        <div style={{ display: 'flex', gap: 12, paddingTop: 6, borderTop: `1px solid rgba(255,255,255,0.04)` }}>
           {[
-            { label: 'EMI/MO', val: emi, t: 'currency' },
-            { label: 'RATE P.A.', val: offer.interestRate, t: 'percent' },
-            { label: 'TENURE', val: offer.tenure, t: 'mo' }
+            { label: 'Active Loans', value: bureau.activeLoans ?? 0 },
+            { label: 'Written-Off', value: bureau.writtenOffAccounts ?? 0, bad: (bureau.writtenOffAccounts ?? 0) > 0 },
+            { label: 'Utilization', value: `${bureau.creditUtilization ?? 0}%` },
           ].map(s => (
-            <div key={s.label}>
-              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}><AnimatedNumber value={s.val} type={s.t} /></div>
+            <div key={s.label} style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.05em', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: s.bad ? C.red : C.text }}>{s.value}</div>
             </div>
           ))}
         </div>
       </motion.div>
 
-      {/* 3 Offer Options from Policy Engine before Negotiation starts */}
-      {currentRound === 0 && policyLimits?.alternatives && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, margin: '4px 0' }}>
-          {policyLimits.alternatives.map((alt) => {
-            const isSelected = offer.amount === alt.amount && offer.tenure === alt.tenure;
-            return (
-               <motion.div key={alt.id}
-                 onClick={() => onUpdateOffer?.(alt.amount, alt.tenure)}
-                 whileHover={{ scale: 1.02 }}
-                 whileTap={{ scale: 0.98 }}
-                 style={{ 
-                   flex: '0 0 auto', width: '100px', cursor: 'pointer',
-                   padding: '12px 10px', borderRadius: 12,
-                   background: isSelected ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.02)',
-                   border: `1px solid ${isSelected ? C.blue : C.border}` 
-                 }}>
-                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>{renderIcon(alt.icon)}</div>
-                 <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? C.blue : C.text, textAlign: 'center', marginBottom: 4 }}>{alt.title}</div>
-                 <div style={{ fontSize: 12, fontWeight: 800, color: C.text, textAlign: 'center' }}>{fmtINR(alt.amount)}</div>
-                 <div style={{ fontSize: 8, color: C.textMuted, textAlign: 'center', marginTop: 2 }}>{alt.tenure} mo @ {alt.interestRate}%</div>
-               </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
+      {/* Offer card */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        style={{ position: 'relative', overflow: 'hidden', padding: '20px', borderRadius: 14, background: 'linear-gradient(145deg, rgba(20,20,32,0.9), rgba(10,10,18,1))', border: `1px solid ${C.borderHi}`, boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 120, height: 120, background: C.blue, opacity: 0.06, borderRadius: '50%', filter: 'blur(40px)' }} />
 
-      {/* Negotiation Log */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-        style={{ border: `1px solid ${C.border}`, borderRadius: 16, background: 'rgba(255,255,255,0.01)', overflow: 'hidden' }}>
-        <div style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.025)', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={12} style={{ color: C.blue }} />
-          <span style={{ fontSize: 10, fontWeight: 800, color: C.textSub, letterSpacing: '0.08em' }}>NEGOTIATION AUDIT TRAIL</span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+          <Zap size={12} style={{ color: C.blue }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.1em' }}>PERSONALISED OFFER</span>
         </div>
-        <div style={{ maxHeight: 130, overflowY: 'auto', scrollbarWidth: 'none' }}>
-          {!negLog || negLog.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: C.textMuted, fontSize: 11, fontStyle: 'italic', opacity: 0.6 }}>
-              Awaiting verbal negotiation...
-            </div>
-          ) : (
-            <AnimatePresence initial={false}>
-              {negLog.map((entry, i) => (
-                <motion.div key={i} initial={{ opacity: 0, x: entry.type === 'AI' ? -10 : 10 }} animate={{ opacity: 1, x: 0 }}
-                  style={{ display: 'flex', gap: 10, padding: '10px 14px', alignItems: 'flex-start', borderBottom: i < negLog.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                  <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 2, background: entry.type === 'AI' ? 'rgba(59,130,246,0.1)' : 'rgba(16,185,129,0.1)', border: `1px solid ${entry.type === 'AI' ? 'rgba(59,130,246,0.3)' : 'rgba(16,185,129,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 7, fontWeight: 900, color: entry.type === 'AI' ? C.blue : C.green }}>{entry.type === 'AI' ? 'AI' : 'U'}</span>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: entry.type === 'AI' ? C.blue : C.green, marginBottom: 2 }}>{entry.type === 'AI' ? 'AI Officer' : 'You'}</div>
-                    <p style={{ fontSize: 11, color: C.textSub, lineHeight: 1.5, margin: 0 }}>{entry.message}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          )}
+
+        <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 4 }}>APPROVED AMOUNT</div>
+        <motion.div key={amount} initial={{ opacity: 0.7, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          style={{ fontSize: 34, fontWeight: 700, color: C.text, letterSpacing: '-0.03em', marginBottom: 16 }}>
+          {fmtINR(amount)}
+        </motion.div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, borderTop: `1px solid rgba(255,255,255,0.06)` }}>
+          <div>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>EMI / MONTH</div>
+            <motion.div key={emi} initial={{ opacity: 0.7 }} animate={{ opacity: 1 }} style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{fmtINR(emi)}</motion.div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>INTEREST RATE</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{offer.interestRate}% p.a.</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: '0.08em', marginBottom: 3 }}>TENURE</div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>{tenure} mo</div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Sliders */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+        style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}` }}>
+        <p style={{ fontSize: 11, color: C.textSub, marginBottom: 12 }}>Adjust your preferences:</p>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: C.textSub }}>Loan Amount</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{fmtINR(amount)}</span>
+          </div>
+          <input type="range" min={100000} max={500000} step={10000} value={amount}
+            onChange={e => { const v = Number(e.target.value); setAmount(v); onUpdateOffer(v, tenure); }}
+            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${loanFill}%, rgba(255,255,255,0.08) ${loanFill}%, rgba(255,255,255,0.08) 100%)` }}
+          />
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: C.textSub }}>Tenure</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{tenure} months</span>
+          </div>
+          <input type="range" min={12} max={84} step={6} value={tenure}
+            onChange={e => { const v = Number(e.target.value); setTenure(v); onUpdateOffer(amount, v); }}
+            style={{ width: '100%', height: 4, borderRadius: 4, outline: 'none', cursor: 'pointer', background: `linear-gradient(to right, ${C.blue} 0%, ${C.blue} ${tenureFill}%, rgba(255,255,255,0.08) ${tenureFill}%, rgba(255,255,255,0.08) 100%)` }}
+          />
         </div>
       </motion.div>
 
@@ -918,7 +841,7 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
           <button onClick={() => setShowAudit(!showAudit)}
             style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: `1px solid ${C.border}`, color: C.textSub, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Policy Audit Trail ({policy.rules.filter(r => r.result === 'pass').length}/{policy.rules.length} passed)</span>
+            <span>📋 Policy Audit Trail ({policy.rules.filter(r => r.result === 'pass').length}/{policy.rules.length} passed)</span>
             <span style={{ fontSize: 10 }}>{showAudit ? '▲' : '▼'}</span>
           </button>
           {showAudit && (
@@ -928,7 +851,7 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
                 <div key={r.rule} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < policy.rules.length - 1 ? `1px solid rgba(255,255,255,0.04)` : 'none' }}>
                   <span style={{ fontSize: 12 }}>{r.result === 'pass' ? '✅' : r.result === 'fail' ? '❌' : '⚠️'}</span>
                   <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: C.text }}>{r.rule}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: C.text }}>{r.rule.replace(/_/g, ' ')}</span>
                     <p style={{ fontSize: 9, color: C.textMuted, marginTop: 1 }}>{r.explanation}</p>
                   </div>
                 </div>
@@ -938,25 +861,19 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
         </motion.div>
       )}
 
-      {/* Action Hint */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(59,130,246,0.05)', border: `1px solid rgba(59,130,246,0.15)` }}>
-        <Mic size={14} style={{ color: C.blue }} />
-        <div style={{ fontSize: 10, color: C.textSub, lineHeight: 1.4 }}>
-          Say <span style={{ color: C.text, fontWeight: 700 }}>"Why is the amount capped?"</span> or <span style={{ color: C.text, fontWeight: 700 }}>"Reduce EMI"</span>
-        </div>
-      </div>
-
-      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-        onClick={() => finalizeNegotiation('I accept these terms')}
-        style={{ width: '100%', padding: '14px 0', borderRadius: 16, background: C.text, color: C.bg, fontWeight: 800, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 8px 30px rgba(255,255,255,0.08)', letterSpacing: '0.05em' }}>
-        LOCK OFFER TERMS
+      <motion.button
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+        onClick={() => triggerConsent('Yes, I agree to the terms and conditions of this loan offer')}
+        style={{ width: '100%', padding: '14px 0', borderRadius: 10, background: C.text, color: C.bg, fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(255,255,255,0.12)', letterSpacing: '0.02em' }}
+      >
+        Accept Offer & Confirm →
       </motion.button>
     </div>
   );
 }
 
-
-/* ─── Phase: CONSENT ────────────────────────────────── */
+/* ─── Phase: CONSENT ──────────────────────────────────── */
 function PanelConsent({ consent, token }) {
   function downloadAuditTrail() {
     const blob = new Blob([
@@ -1009,7 +926,7 @@ function PanelConsent({ consent, token }) {
   );
 }
 
-/* ─── Phase: COMPLETE ───────────────────────────────── */
+/* ─── Phase: COMPLETE ─────────────────────────────────── */
 function PanelComplete({ offer, token }) {
   const navigate = useNavigate();
   const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
@@ -1052,11 +969,11 @@ function PanelComplete({ offer, token }) {
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    RIGHT PANEL (ORCHESTRATED)
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+══════════════════════════════════════════════════════════ */
 function RightPanel({ orchState, kycFields, token }) {
-  const { phase, aadhaar, kycMismatch, faceAge, bureau, policy, offer, consent, negotiation } = orchState;
+  const { phase, aadhaar, kycMismatch, faceAge, bureau, policy, offer, consent } = orchState;
   const currentStep = phaseToStep(phase);
 
   function renderContent() {
@@ -1076,7 +993,7 @@ function RightPanel({ orchState, kycFields, token }) {
       case PHASES.BUREAU:
         return <PanelBureau bureau={bureau} policy={policy} />;
       case PHASES.OFFER:
-        return <PanelOffer offer={offer} bureau={bureau} policy={policy} negotiation={negotiation} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
+        return <PanelOffer offer={offer} bureau={bureau} policy={policy} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
       case PHASES.CONSENT:
         return <PanelConsent consent={consent} token={token} />;
       case PHASES.COMPLETE:
@@ -1141,9 +1058,9 @@ function RightPanel({ orchState, kycFields, token }) {
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    MAIN PAGE
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+══════════════════════════════════════════════════════════ */
 export default function VideoCallPage() {
   const { token } = useParams();
   const [isVideoOn, setIsVideoOn] = useState(true);
