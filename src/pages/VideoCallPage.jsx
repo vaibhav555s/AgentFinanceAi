@@ -588,7 +588,7 @@ function useJitsiScript() {
     }
     const script = document.createElement('script');
     script.id = 'jitsi-api-script';
-    script.src = 'https://meet.jit.si/external_api.js';
+    script.src = 'https://alpha.jitsi.net/external_api.js';
     script.async = true;
     script.onload = () => setLoaded(true);
     script.onerror = () => console.error('Failed to load Jitsi API');
@@ -611,7 +611,7 @@ function JitsiMeetEmbed({ roomName, isMicOn, isVideoOn, onJoined }) {
     if (apiRef.current) return;
 
     try {
-      const api = new window.JitsiMeetExternalAPI('meet.jit.si', {
+      const api = new window.JitsiMeetExternalAPI('alpha.jitsi.net', {
         roomName,
         parentNode: containerRef.current,
         width: '100%',
@@ -620,6 +620,7 @@ function JitsiMeetEmbed({ roomName, isMicOn, isVideoOn, onJoined }) {
           startWithAudioMuted: !isMicOn,
           startWithVideoMuted: !isVideoOn,
           prejoinPageEnabled: false,
+          prejoinConfig: { enabled: false },
           disableDeepLinking: true,
           disableInviteFunctions: true,
           toolbarButtons: [],
@@ -841,7 +842,16 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isL
       </div>
 
       {/* Center content */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
+      <div
+        className="flex-1 flex flex-col items-center justify-center gap-4 px-4"
+        style={{
+          opacity: callJoined ? 0 : 1,
+          pointerEvents: callJoined ? 'none' : 'auto',
+          transition: 'opacity 0.6s ease',
+          position: 'relative',
+          zIndex: 2,
+        }}
+      >
         {/* Ambient glow ring behind avatar */}
         <div style={{ position: 'relative' }}>
           <motion.div
