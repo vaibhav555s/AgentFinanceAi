@@ -65,7 +65,17 @@ export async function synthesizeAndPlay(text, options = {}) {
         const audios = response.data?.audios;
         if (audios && audios.length > 0) {
             const base64Audio = audios[0];
-            const audioUrl = `data:audio/wav;base64,${base64Audio}`;
+            
+            // Convert base64 to Blob URL to prevent dataURI length issues
+            const byteCharacters = atob(base64Audio);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            // Using audio/wav, as Sarvam TTS typically defaults to wav
+            const blob = new Blob([byteArray], { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(blob);
 
             // Stop currently playing audio if any
             if (currentAudio) {
@@ -78,17 +88,19 @@ export async function synthesizeAndPlay(text, options = {}) {
             return new Promise((resolve, reject) => {
                 currentAudio.onplay = () => {
                     isPlaying = true;
-                    // Dispatch custom event to notify UI (e.g. SpeakingBars)
                     window.dispatchEvent(new CustomEvent('ai_speaking_start'));
                 };
                 currentAudio.onended = () => {
                     isPlaying = false;
                     window.dispatchEvent(new CustomEvent('ai_speaking_end'));
+                    URL.revokeObjectURL(audioUrl); // Free memory
                     resolve();
                 };
                 currentAudio.onerror = (e) => {
                     isPlaying = false;
-                    reject(e);
+                    const errCode = currentAudio.error ? currentAudio.error.code : 'unknown';
+                    const errMsg = `Media playback error (code ${errCode})`;
+                    reject(new Error(errMsg));
                 };
                 currentAudio.play().catch((err) => {
                     isPlaying = false;

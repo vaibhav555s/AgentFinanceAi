@@ -562,290 +562,84 @@ function Stage5Complete({ token, loanAmount, tenure }) {
 
 
 
-/* ─── Jitsi Script Loader ─────────────────────── */
-function useJitsiScript() {
-  const [loaded, setLoaded] = useState(
-    typeof window !== 'undefined' && !!window.JitsiMeetExternalAPI
-  );
+/* ─── Camera Frame ────────────────────────────── */
+function CameraFrame({ isVideoOn, onCameraReady }) {
+  const videoRef = useRef(null);
+  const [stream, setStream] = useState(null);
+
+  // We ask for media once, and toggle tracks on/off when props change
   useEffect(() => {
-    if (loaded) return;
-    const existing = document.getElementById('jitsi-api-script');
-    if (existing) {
-      existing.addEventListener('load', () => setLoaded(true));
-      return;
-    }
-    const script = document.createElement('script');
-    script.id = 'jitsi-api-script';
-    script.src = 'https://alpha.jitsi.net/external_api.js';
-    script.async = true;
-    script.onload = () => setLoaded(true);
-    script.onerror = () => console.error('Failed to load Jitsi API');
-    document.head.appendChild(script);
-  }, [loaded]);
-  return loaded;
-}
-
-/* ─── Jitsi Meet Embed ────────────────────────── */
-function JitsiMeetEmbed({ roomName, isMicOn, isVideoOn, onJoined }) {
-  const containerRef = useRef(null);
-  const apiRef = useRef(null);
-  const scriptLoaded = useJitsiScript();
-  const [showLobby, setShowLobby] = useState(true);
-  const [hasError, setHasError] = useState(false);
-
-  // Initialise Jitsi once script is ready
-  useEffect(() => {
-    if (!scriptLoaded || !containerRef.current) return;
-    if (apiRef.current) return;
-
-    try {
-      const api = new window.JitsiMeetExternalAPI('alpha.jitsi.net', {
-        roomName,
-        parentNode: containerRef.current,
-        width: '100%',
-        height: '100%',
-        configOverwrite: {
-          startWithAudioMuted: !isMicOn,
-          startWithVideoMuted: !isVideoOn,
-          prejoinPageEnabled: false,
-          prejoinConfig: { enabled: false },
-          disableDeepLinking: true,
-          disableInviteFunctions: true,
-          toolbarButtons: [],
-          hideConferenceSubject: true,
-          hideConferenceTimer: true,
-          hideLobbyButton: true,
-          disableRemoteMute: true,
-          enableClosePage: false,
-        },
-        interfaceConfigOverwrite: {
-          SHOW_JITSI_WATERMARK: false,
-          SHOW_WATERMARK_FOR_GUESTS: false,
-          SHOW_BRAND_WATERMARK: false,
-          SHOW_POWERED_BY: false,
-          SHOW_PROMOTIONAL_CLOSE_PAGE: false,
-          TOOLBAR_BUTTONS: [],
-          MOBILE_APP_PROMO: false,
-          DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
-          DEFAULT_BACKGROUND: '#0D0D14',
-          VIDEO_QUALITY_LABEL_DISABLED: true,
-        },
-      });
-
-      apiRef.current = api;
-
-      api.addEventListener('videoConferenceJoined', () => {
-        setShowLobby(false);
-        onJoined?.();
-      });
-
-      api.addEventListener('videoConferenceLeft', () => {
-        setShowLobby(true);
-      });
-
-      api.addEventListener('errorOccurred', (err) => {
-        console.error('Jitsi error:', err);
-        if (err?.error?.isFatal) setHasError(true);
-      });
-
-    } catch (e) {
-      console.error('Failed to initialize Jitsi:', e);
-      setHasError(true);
+    let activeStream = null;
+    
+    // We only need to request video if isVideoOn. 
+    // Usually Audio is handled by another hook but we can request both if wanted.
+    // For just showing local camera video:
+    if (isVideoOn) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(s => {
+          activeStream = s;
+          setStream(s);
+          if (videoRef.current) videoRef.current.srcObject = s;
+          onCameraReady?.();
+        })
+        .catch(err => {
+          console.error("Camera access denied or unavailable", err);
+          onCameraReady?.(); // Trigger continue anyway
+        });
+    } else {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        setStream(null);
+      }
+      onCameraReady?.();
     }
 
     return () => {
-      apiRef.current?.dispose();
-      apiRef.current = null;
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptLoaded, roomName]);
-
-  // Auto-dismiss lobby after 12s in case the event never fires
-  useEffect(() => {
-    if (!showLobby) return;
-    const t = setTimeout(() => {
-      setShowLobby(false);
-      onJoined?.();
-    }, 12000);
-    return () => clearTimeout(t);
-  }, [showLobby, onJoined]);
-
-  // Sync mic state with Jitsi
-  const prevMicRef = useRef(isMicOn);
-  useEffect(() => {
-    if (!apiRef.current || showLobby) return;
-    if (prevMicRef.current !== isMicOn) {
-      apiRef.current.executeCommand('toggleAudio');
-      prevMicRef.current = isMicOn;
-    }
-  }, [isMicOn, showLobby]);
-
-  // Sync video state with Jitsi
-  const prevVideoRef = useRef(isVideoOn);
-  useEffect(() => {
-    if (!apiRef.current || showLobby) return;
-    if (prevVideoRef.current !== isVideoOn) {
-      apiRef.current.executeCommand('toggleVideo');
-      prevVideoRef.current = isVideoOn;
-    }
-  }, [isVideoOn, showLobby]);
+  }, [isVideoOn]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      {/* Jitsi iframe container — ALWAYS fully visible so browser can show permission prompts */}
-      <div
-        ref={containerRef}
-        style={{ width: '100%', height: '100%' }}
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1, backgroundColor: '#0D0D14' }}>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{
+          width: '100%', height: '100%', objectFit: 'cover',
+          opacity: isVideoOn && stream ? 1 : 0, transition: 'opacity 0.5s ease',
+          transform: 'scaleX(-1)', // Local preview mirror
+        }}
       />
-
-      {/* Lobby overlay — sits on top and fades away once joined */}
-      <AnimatePresence>
-        {showLobby && (
-          <motion.div
-            key="lobby"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.55 }}
-            style={{
-              position: 'absolute', inset: 0,
-              background: 'radial-gradient(ellipse at 50% 50%, #0F1628 0%, #0D0D14 60%, #080810 100%)',
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', gap: 24,
-              pointerEvents: 'none', // let clicks pass through to the iframe below
-              zIndex: 10,
-            }}
-          >
-            {hasError ? (
-              <>
-                <div style={{
-                  width: 72, height: 72, borderRadius: '50%',
-                  background: 'rgba(239,68,68,0.1)', border: '2px solid rgba(239,68,68,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <PhoneOff size={28} style={{ color: '#EF4444' }} />
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 600, color: '#F8FAFC', marginBottom: 6 }}>
-                    Connection Failed
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 220, textAlign: 'center' }}>
-                    Could not connect. Please check your internet connection and refresh.
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Ambient glow ring */}
-                <div style={{ position: 'relative' }}>
-                  <motion.div
-                    animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.6, 0.3] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{
-                      position: 'absolute', inset: -20, borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(59,130,246,0.25) 0%, transparent 70%)',
-                      filter: 'blur(14px)',
-                    }}
-                  />
-                  <div style={{
-                    width: 100, height: 100, borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.04)',
-                    backdropFilter: 'blur(24px)',
-                    border: '2px solid rgba(59,130,246,0.5)',
-                    boxShadow: '0 0 30px rgba(59,130,246,0.4)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    position: 'relative', zIndex: 1,
-                  }}>
-                    <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: '#3B82F6' }}>AI</span>
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 15, fontWeight: 600, color: '#F8FAFC', marginBottom: 6 }}>
-                    Connecting to Session
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    Room: <span style={{ color: '#60A5FA', fontFamily: 'monospace' }}>{roomName}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                    style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.3)', borderTopColor: '#3B82F6', flexShrink: 0 }}
-                  />
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    Allow camera &amp; mic in your browser to join
-                  </span>
-                </div>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {(!isVideoOn || !stream) && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center' }}>
+          <VideoOff size={48} style={{ color: 'rgba(255,255,255,0.1)' }} />
+        </div>
+      )}
     </div>
   );
 }
 
-/* ─── Video Analysis Hook ─────────────────────── */
-function useVideoAnalysis(active) {
-  useEffect(() => {
-    if (!active) return;
-
-    let stream = null;
-    const video = document.createElement('video');
-    const canvas = document.createElement('canvas');
-    let intervalId = null;
-
-    async function init() {
-      try {
-        console.log('[VIDEO_ANALYSIS] Requesting camera access...');
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        video.setAttribute('autoplay', '');
-        video.setAttribute('muted', '');
-        video.setAttribute('playsinline', '');
-        video.style.display = 'none';
-        document.body.appendChild(video);
-
-        await video.play();
-        console.log('[VIDEO_ANALYSIS] Camera stream active.');
-
-        const capture = () => {
-          if (video.readyState >= 2) {
-            console.log('[VIDEO_ANALYSIS] Capturing frame...');
-            canvas.width = 640;
-            canvas.height = 480;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const base64 = canvas.toDataURL('image/jpeg', 0.8);
-            processVideoFrame(base64);
-          }
-        };
-
-        setTimeout(capture, 2000);
-        intervalId = setInterval(capture, 12000);
-      } catch (err) {
-        console.error('[VIDEO_ANALYSIS] capture error:', err);
-      }
-    }
-
-    init();
-    return () => {
-      console.log('[VIDEO_ANALYSIS] Cleaning up...');
-      if (intervalId) clearInterval(intervalId);
-      stream?.getTracks().forEach(t => t.stop());
-      if (document.body.contains(video)) document.body.removeChild(video);
-    };
-  }, [active]);
-}
 
 /* ─── Left Panel ─────────────────────────────────────── */
-function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isListening, micError, isProcessing, onJoined }) {
+function LeftPanel({ isVideoOn, setIsVideoOn, isListening, micError, isProcessing, startRecording, stopRecording, onJoined }) {
   const [callJoined, setCallJoined] = useState(false);
-  const { extractedData } = useAIState();
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
 
-  useVideoAnalysis(callJoined);
+  useEffect(() => {
+    const handleStart = () => setIsAiSpeaking(true);
+    const handleEnd = () => setIsAiSpeaking(false);
+    window.addEventListener('ai_speaking_start', handleStart);
+    window.addEventListener('ai_speaking_end', handleEnd);
+    return () => {
+      window.removeEventListener('ai_speaking_start', handleStart);
+      window.removeEventListener('ai_speaking_end', handleEnd);
+    };
+  }, []);
 
   return (
     <div
@@ -857,13 +651,11 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isL
         overflow: 'hidden',
       }}
     >
-      {/* Jitsi embed — fills entire panel */}
+      {/* Local Camera embed — fills entire panel */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-        <JitsiMeetEmbed
-          roomName={roomName}
-          isMicOn={isMicOn}
+        <CameraFrame
           isVideoOn={isVideoOn}
-          onJoined={() => { setCallJoined(true); onJoined?.(); }}
+          onCameraReady={() => { setCallJoined(true); onJoined?.(); }}
         />
       </div>
 
@@ -889,9 +681,6 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isL
       <div
         className="flex-1 flex flex-col items-center justify-center gap-4 px-4"
         style={{
-          opacity: callJoined ? 0 : 1,
-          pointerEvents: callJoined ? 'none' : 'auto',
-          transition: 'opacity 0.6s ease',
           position: 'relative',
           zIndex: 2,
         }}
@@ -923,11 +712,34 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isL
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-3">
-          <span style={{ fontSize: 16, fontFamily: 'Sora, sans-serif', color: '#F8FAFC', fontWeight: 500 }}>
-            AI Loan Officer
-          </span>
-          <SpeakingBars />
+        <div className="flex flex-col items-center gap-3 transition-opacity duration-300">
+          <div className="flex items-center gap-2">
+            {!isAiSpeaking && isListening && <div className="w-2 h-2 rounded-full" style={{ background: '#F87171', boxShadow: '0 0 10px #F87171', animation: 'pulse 1.5s infinite' }} />}
+            <span style={{ fontSize: 16, fontFamily: 'Sora, sans-serif', color: isAiSpeaking ? '#38BDF8' : (isListening ? '#F87171' : '#F8FAFC'), fontWeight: 600, transition: 'color 0.3s' }}>
+              {isAiSpeaking ? "AI Officer is Speaking..." : isListening ? "Recording your response..." : "Ready for your response..."}
+            </span>
+          </div>
+          <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {isAiSpeaking ? <SpeakingBars /> : (
+              <button
+                disabled={isAiSpeaking || isProcessing}
+                onClick={isListening ? stopRecording : startRecording}
+                className="px-6 py-2 rounded-full transition-all duration-200"
+                style={{
+                  background: isListening ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.1)',
+                  border: isListening ? '1px solid rgba(248,113,113,0.5)' : '1px solid rgba(255,255,255,0.2)',
+                  color: isListening ? '#F87171' : '#FFF',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: isAiSpeaking || isProcessing ? 'not-allowed' : 'pointer',
+                  opacity: isAiSpeaking || isProcessing ? 0.5 : 1,
+                  boxShadow: isListening ? '0 0 15px rgba(248,113,113,0.3)' : 'none'
+                }}
+              >
+                {isProcessing ? "Processing..." : isListening ? "Tap to Stop & Send" : "Tap to Speak"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -946,19 +758,6 @@ function LeftPanel({ roomName, isMicOn, setIsMicOn, isVideoOn, setIsVideoOn, isL
           <Typewriter />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setIsMicOn(v => !v)}
-            className="flex items-center gap-1.5 glass-pill px-3 py-2 transition-all duration-150"
-            style={{
-              border: isMicOn ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.1)',
-              boxShadow: isMicOn ? '0 0 12px rgba(59,130,246,0.25)' : 'none',
-            }}
-          >
-            {isMicOn
-              ? <Mic size={13} style={{ color: '#3B82F6' }} />
-              : <MicOff size={13} style={{ color: '#475569' }} />
-            }
-          </button>
           <button
             onClick={() => setIsVideoOn(v => !v)}
             className="flex items-center gap-1.5 glass-pill px-3 py-2 transition-all duration-150"
@@ -1069,7 +868,6 @@ function RightPanel({ currentStage, setCurrentStage, token, loanAmount, setLoanA
 export default function VideoCallPage() {
   const { token } = useParams();
   const [currentStage, setCurrentStage] = useState(1);
-  const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [loanAmount, setLoanAmount] = useState(200000);
   const [tenure, setTenure] = useState(60);
@@ -1077,13 +875,8 @@ export default function VideoCallPage() {
   const [sessionJoined, setSessionJoined] = useState(false);
 
   // ─── AI Hooks ─────────────────────────────────────────
-  // Only start recording after Jitsi has joined so the streams don't conflict
-  const { isListening, micError, isProcessing } = useAudioCapture(isMicOn && sessionJoined);
+  const { isListening, micError, isProcessing, startRecording, stopRecording } = useAudioCapture();
   const aiState = useAIState({ debounceMs: 500 });
-
-  // Derive a safe Jitsi room name from the URL token
-  // Must be alphanumeric + hyphens only; prefix with 'agentfinance-'
-  const roomName = `agentfinance-${(token || 'demo').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
 
   useEffect(() => {
     document.body.style.backgroundColor = colors.bgBase;
@@ -1101,10 +894,9 @@ export default function VideoCallPage() {
         }}
       >
         <LeftPanel
-          roomName={roomName}
-          isMicOn={isMicOn} setIsMicOn={setIsMicOn}
           isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
           isListening={isListening} micError={micError} isProcessing={isProcessing}
+          startRecording={startRecording} stopRecording={stopRecording}
           onJoined={() => setSessionJoined(true)}
         />
         <RightPanel
@@ -1126,10 +918,9 @@ export default function VideoCallPage() {
         {/* Video — top 42% */}
         <div style={{ flex: '0 0 42%', position: 'relative', overflow: 'hidden' }}>
           <LeftPanel
-            roomName={roomName}
-            isMicOn={isMicOn} setIsMicOn={setIsMicOn}
             isVideoOn={isVideoOn} setIsVideoOn={setIsVideoOn}
             isListening={isListening} micError={micError} isProcessing={isProcessing}
+            startRecording={startRecording} stopRecording={stopRecording}
             onJoined={() => setSessionJoined(true)}
           />
         </div>
