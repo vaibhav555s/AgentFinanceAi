@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import useAudioCapture from '../hooks/useAudioCapture.js';
 import useAIState from '../hooks/useAIState.js';
+import { useAuth } from '../context/AuthContext';
 import {
   subscribeOrchestrator,
   getOrchestratorState,
@@ -19,8 +20,11 @@ import {
   triggerConsent,
   finalizeNegotiation,
   PHASES,
+  setUserId,
+  rehydrateSession,
 } from '../modules/orchestration/sessionOrchestrator.js';
 import { processVideoFrame } from '../modules/interaction/liveInteraction.js';
+import { fetchApplicationState, unlockApplication } from '../services/dbService.js';
 
 /* ─── Helpers ────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -1217,6 +1221,44 @@ export default function VideoCallPage() {
   const { token } = useParams();
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [orchState, setOrchState] = useState(() => getOrchestratorState());
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user?.id) {
+      setUserId(user.id);
+    }
+  }, [user]);
+
+  // Handle rehydration if token is a UUID
+  useEffect(() => {
+    let currentAppId = null;
+    
+    async function handleRehydration() {
+      if (!token) return;
+      // Basic UUID regex check
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+      if (isUUID) {
+        currentAppId = token;
+        try {
+          const appState = await fetchApplicationState(token);
+          if (appState?.application) {
+            await rehydrateSession(appState);
+          }
+        } catch (err) {
+          console.error('Failed to rehydrate session:', err);
+        }
+      }
+    }
+    
+    handleRehydration();
+    
+    // Cleanup on unmount or token change
+    return () => {
+       if (currentAppId) {
+          unlockApplication(currentAppId).catch(err => console.error('Failed to unlock:', err));
+       }
+    };
+  }, [token]);
 
   // Subscribe to orchestrator changes
   useEffect(() => {

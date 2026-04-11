@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Sun, Moon, Menu, X, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
+import { signOutUser } from '../services/authService';
 
 export default function Navbar({ theme, onToggleTheme }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -83,26 +86,48 @@ export default function Navbar({ theme, onToggleTheme }) {
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
 
-              {/* Request Demo */}
-              <button
-                onClick={() => navigate('/session/demo-token-123')}
-                className="ml-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150"
-                style={{
-                  border: '1px solid rgba(59,130,246,0.4)',
-                  color: '#3B82F6',
-                  background: 'rgba(59,130,246,0.06)',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'rgba(59,130,246,0.12)';
-                  e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'rgba(59,130,246,0.06)';
-                  e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)';
-                }}
-              >
-                Request Demo
-              </button>
+              {/* User Dynamic Button */}
+              {user ? (
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="ml-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+                  style={{
+                    border: '1px solid rgba(59,130,246,0.4)',
+                    color: '#3B82F6',
+                    background: 'rgba(59,130,246,0.06)',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(59,130,246,0.12)';
+                    e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(59,130,246,0.06)';
+                    e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)';
+                  }}
+                >
+                  Dashboard
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/auth')}
+                  className="ml-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+                  style={{
+                    border: '1px solid rgba(59,130,246,0.4)',
+                    color: '#3B82F6',
+                    background: 'rgba(59,130,246,0.06)',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(59,130,246,0.12)';
+                    e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(59,130,246,0.06)';
+                    e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)';
+                  }}
+                >
+                  Login
+                </button>
+              )}
             </div>
 
             {/* Mobile: theme + hamburger */}
@@ -155,17 +180,31 @@ export default function Navbar({ theme, onToggleTheme }) {
                     {link.label}
                   </Link>
                 ))}
-                <button
-                  onClick={() => { navigate('/session/demo-token-123'); setMenuOpen(false); }}
-                  className="mt-1 px-4 py-3 rounded-lg text-sm font-semibold text-left transition-all duration-150"
-                  style={{
-                    border: '1px solid rgba(59,130,246,0.4)',
-                    color: '#3B82F6',
-                    background: 'rgba(59,130,246,0.06)',
-                  }}
-                >
-                  Request Demo
-                </button>
+                {user ? (
+                  <button
+                    onClick={() => { navigate('/dashboard'); setMenuOpen(false); }}
+                    className="mt-1 px-4 py-3 rounded-lg text-sm font-semibold text-left transition-all duration-150"
+                    style={{
+                      border: '1px solid rgba(59,130,246,0.4)',
+                      color: '#3B82F6',
+                      background: 'rgba(59,130,246,0.06)',
+                    }}
+                  >
+                    Dashboard
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { navigate('/auth'); setMenuOpen(false); }}
+                    className="mt-1 px-4 py-3 rounded-lg text-sm font-semibold text-left transition-all duration-150"
+                    style={{
+                      border: '1px solid rgba(59,130,246,0.4)',
+                      color: '#3B82F6',
+                      background: 'rgba(59,130,246,0.06)',
+                    }}
+                  >
+                    Login
+                  </button>
+                )}
               </div>
             </motion.div>
           )}

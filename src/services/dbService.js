@@ -11,10 +11,16 @@ export const getApplicationId = () => activeApplicationId;
 
 export const initLoanApplication = async (metadata = {}) => {
   try {
+    // Session expires in 48 hours
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
     const { data, error } = await supabase
       .from('loan_applications')
       .insert([{
+        user_id: metadata.user_id || null,
         status: 'pending_kyc',
+        resume_checkpoint: 'chat_started',
+        expires_at: expiresAt,
         ip_address: metadata.ip_address,
         latitude: metadata.latitude,
         longitude: metadata.longitude,
@@ -328,3 +334,95 @@ export const saveIntelligenceAnalysis = async (applicationId, analysisData) => {
     log('DB', 'ERROR', 'Failed to save intelligence analysis', err);
   }
 };
+
+/**
+ * Hydrates state for resuming an application
+ */
+export const fetchApplicationState = async (appId) => {
+  try {
+    const { data: appData, error: appError } = await supabase
+      .from('loan_applications')
+      .select('*')
+      .eq('id', appId)
+      .single();
+
+    if (appError) throw appError;
+
+    // Check expiry
+    if (appData.expires_at && new Date(appData.expires_at) < new Date()) {
+      throw new Error('Application resume session has expired (48 hours limit).');
+    }
+
+    const { data: kycData } = await supabase
+      .from('kyc_records')
+      .select('*')
+      .eq('application_id', appId)
+      .single();
+
+    return { application: appData, kyc: kycData };
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to fetch state for app ${appId}`, err);
+    return null;
+  }
+};
+
+export const updateResumeCheckpoint = async (appId, checkpoint) => {
+  try {
+    const { error } = await supabase
+      .from('loan_applications')
+      .update({ resume_checkpoint: checkpoint, updated_at: new Date().toISOString() })
+      .eq('id', appId);
+    
+    if (error) throw error;
+    log('DB', 'INFO', `Updated resume checkpoint to ${checkpoint} for app ${appId}`);
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to update checkpoint ${checkpoint}`, err);
+  }
+};
+
+export const lockApplication = async (appId, sessionId) => {
+  try {
+    const { data, error } = await supabase
+      .from('loan_applications')
+      .update({ is_active_session: true, active_session_id: sessionId })
+      .eq('id', appId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to lock application ${appId}`, err);
+    return false;
+  }
+};
+
+export const unlockApplication = async (appId) => {
+  try {
+    const { error } = await supabase
+      .from('loan_applications')
+      .update({ is_active_session: false, active_session_id: null })
+      .eq('id', appId);
+
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'ERROR', `Failed to unlock app ${appId}`, err);
+  }
+};
+
+export const logApplicationEvent = async (appId, eventName, metadata = {}) => {
+  try {
+    const { error } = await supabase
+      .from('application_events')
+      .insert([{
+        application_id: appId,
+        event: eventName,
+        metadata: metadata
+      }]);
+    
+    if (error) throw error;
+  } catch (err) {
+    log('DB', 'WARN', `Could not log application event ${eventName}`, err);
+  }
+};
+
