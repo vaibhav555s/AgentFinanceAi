@@ -302,7 +302,14 @@ export default function CompliancePage() {
                   <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Timestamp</span>
                   <span className="text-[14px] text-white/60 lowercase">{new Date(log.created_at).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-end gap-4 w-48">
+                <div className="flex justify-end gap-4 w-64">
+                  <button 
+                    onClick={() => generatePDF(log)}
+                    className="text-[11px] font-bold uppercase tracking-widest px-6 py-3 border border-violet-500/20 text-violet-500 hover:border-violet-500 hover:bg-violet-500/10 transition-all flex items-center gap-2"
+                  >
+                    <Download size={12} />
+                    PDF
+                  </button>
                   <button 
                     onClick={() => {
                         const fileData = JSON.stringify(log.report_json, null, 2);
@@ -314,7 +321,7 @@ export default function CompliancePage() {
                     }}
                     className="text-[11px] font-bold uppercase tracking-widest px-6 py-3 border border-white/5 text-white/30 hover:border-white hover:text-white transition-all"
                   >
-                    Details
+                    JSON
                   </button>
                 </div>
               </motion.div>
