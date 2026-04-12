@@ -82,89 +82,61 @@ const NAV_ITEMS = [
   { id: 'transcripts',  Icon: FileText,        label: 'Transcripts'   },
 ];
 
-function Sidebar({ active, setActive }) {
+/* ─── Top Navigation ──────────────────────────────────── */
+function TopNav({ active, setActive }) {
   const navigate = useNavigate();
   return (
-    <div
-      className="flex flex-col"
-      style={{
-        width: 220, flexShrink: 0,
-        height: '100%',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
-        background: 'rgba(255,255,255,0.015)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Zap size={11} style={{ color: '#3B82F6' }} fill="#3B82F6" />
-        </div>
-        <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-          AgentFinance AI
-        </span>
-      </div>
+    <div className="fixed top-8 left-0 right-0 z-[100] flex justify-center pointer-events-none">
+      <motion.nav 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="pointer-events-auto flex items-center gap-1 bg-[#141414]/80 backdrop-blur-2xl border border-white/5 px-2 py-2 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+      >
+        <button 
+          onClick={() => navigate('/')}
+          className="p-3 hover:bg-white/5 rounded-full transition-colors group"
+        >
+          <Zap size={16} className="text-white group-hover:text-violet-400" />
+        </button>
+        
+        <div className="w-[1px] h-6 bg-white/10 mx-1" />
 
-      {/* Nav */}
-      <div className="flex flex-col gap-0.5 px-2 py-3 flex-1">
-        {NAV_ITEMS.map(({ id, Icon, label, badge }) => (
+        {NAV_ITEMS.map(({ id, label, Icon }) => (
           <button
             key={id}
-            className={`sidebar-link ${active === id ? 'active' : ''}`}
             onClick={() => setActive(id)}
+            className={`px-6 py-2.5 rounded-full text-[12px] font-bold uppercase tracking-[0.1em] transition-all duration-300 flex items-center gap-2 ${
+              active === id ? 'bg-white text-black' : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}
           >
-            <Icon size={15} style={{ color: active === id ? '#3B82F6' : 'var(--text-muted)', flexShrink: 0 }} />
-            <span className="flex-1 text-left">{label}</span>
-            {badge && (
-              <span
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold"
-                style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}
-              >
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#EF4444', display: 'inline-block', animation: 'pulseGlow 1.5s infinite' }} />
-                {badge} live
-              </span>
-            )}
+            <Icon size={14} />
+            {label}
           </button>
         ))}
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 12px' }} />
-        <button
-          className="sidebar-link"
-          onClick={() => navigate('/compliance')}
-        >
-          <Shield size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <span className="flex-1 text-left">Compliance</span>
-          <ChevronRight size={11} style={{ color: 'var(--text-muted)' }} />
-        </button>
-      </div>
 
-      {/* Bottom status */}
-      <div className="px-4 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 mb-1">
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 6px rgba(16,185,129,0.7)' }} />
-          <span style={{ fontSize: 12, color: '#10B981', fontWeight: 500 }}>All Systems Operational</span>
-        </div>
-        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>v1.0.0 · Hackathon Build</span>
-      </div>
+        <div className="w-[1px] h-6 bg-white/10 mx-1" />
+
+        <button 
+          onClick={() => navigate('/compliance')}
+          className="px-6 py-2.5 rounded-full text-[12px] font-bold uppercase tracking-[0.1em] text-white/40 hover:text-white/70 hover:bg-white/5 flex items-center gap-2"
+        >
+          <Shield size={14} />
+          Compliance
+        </button>
+      </motion.nav>
     </div>
   );
 }
 
-/* ─── Stat Card ──────────────────────────────────────── */
-function StatCard({ label, value, icon: Icon, iconColor = '#3B82F6', trend, trendIcon: TrendIcon, trendColor = '#10B981' }) {
+function StatCard({ label, value, trend, trendColor = 'text-white' }) {
   return (
-    <motion.div variants={fadeItem} className="glass-card p-5">
-      <div className="flex items-start justify-between mb-3">
-        <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>{label}</span>
-        <Icon size={14} style={{ color: iconColor }} />
-      </div>
-      <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 30, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+    <motion.div variants={fadeItem} className="flex flex-col border-r border-white/5 last:border-0 pr-8">
+      <span className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-bold mb-3">{label}</span>
+      <div className="text-[48px] font-medium tracking-tight text-white leading-none mb-3">
         {value}
       </div>
       {trend && (
-        <div className="flex items-center gap-1.5">
-          {TrendIcon && <TrendIcon size={12} style={{ color: trendColor }} />}
-          <span style={{ fontSize: 12, color: trendColor }}>{trend}</span>
-        </div>
+        <span className={`text-[12px] font-medium lowercase tracking-tight ${trendColor}`}>{trend}</span>
       )}
     </motion.div>
   );
@@ -172,431 +144,230 @@ function StatCard({ label, value, icon: Icon, iconColor = '#3B82F6', trend, tren
 
 /* ─── Overview section ───────────────────────────────── */
 function OverviewSection({ data }) {
-  const { sessions, events, flags, metrics } = data;
+  const { sessions, events, flags } = data;
   const transcriptEndRef = useRef(null);
+
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  }, [events]);
 
   return (
-    <div className="p-6 flex flex-col gap-6">
-      {/* Stats */}
+    <div className="flex flex-col gap-24">
+      {/* Stats Row */}
       <motion.div
         initial="hidden" animate="visible" variants={stagger}
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+        className="flex flex-wrap gap-20 py-12 border-y border-white/5"
       >
-        <StatCard label="Active Sessions" value={sessions.filter(s => s.status === "live").length} icon={Radio} iconColor="#3B82F6"
-          trend={`${sessions.filter(s => s.status === "live").length} live now`} trendIcon={Radio} trendColor="#3B82F6" />
-        <StatCard label="Fraud Flags" value={flags.filter(f => f.severity === "high").length} icon={ShieldCheck} iconColor="#10B981"
-          trend={flags.filter(f => f.severity === "high").length === 0 ? "All clear" : "Action needed"} trendIcon={CheckCircle} trendColor="#10B981" />
-        <StatCard label="Avg Session Time" value="4:32" icon={Clock} iconColor="#8B5CF6"
-          trend="12% faster than avg" trendIcon={TrendingDown} trendColor="#10B981" />
-        <StatCard label="Offers Accepted" value="3" icon={CheckCircle} iconColor="#10B981"
-          trend="Today" trendIcon={TrendingUp} trendColor="#10B981" />
+        <StatCard 
+          label="Active Sessions" 
+          value={sessions.filter(s => s.status === 'live').length} 
+          trend={`${sessions.filter(s => s.status === 'live').length} live now`} 
+        />
+        <StatCard 
+          label="Fraud Flags" 
+          value={flags.filter(f => f.severity === 'high').length} 
+          trend={flags.filter(f => f.severity === 'high').length === 0 ? 'All clear' : 'Action needed'} 
+          trendColor="text-violet-500"
+        />
+        <StatCard 
+          label="Avg Session Time" 
+          value="4:32" 
+          trend="12% faster than avg" 
+        />
+        <StatCard 
+          label="Offers Accepted" 
+          value={sessions.filter(s => s.application_stage === 'completed').length} 
+          trend="Today" 
+          trendColor="text-violet-500"
+        />
       </motion.div>
 
-      {/* Live session monitor */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        <div className="flex items-center gap-2 mb-4">
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', boxShadow: '0 0 8px rgba(239,68,68,0.7)', animation: 'pulseGlow 1.5s infinite' }} />
-          <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-            Live Session Monitor
-          </h2>
+      {/* Monitor Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-24">
+        {/* Transcript */}
+        <div className="flex flex-col gap-8">
+          <div className="flex items-center justify-between border-b border-white/5 pb-6">
+            <h3 className="text-[20px] font-medium text-white lowercase">live transcript</h3>
+            <span className="text-[10px] text-violet-500 font-bold uppercase tracking-widest animate-pulse">Auto-scrolling</span>
+          </div>
+          <div className="flex flex-col gap-6 max-h-[600px] overflow-y-auto scrollbar-hide pr-4">
+            {events.slice(0, 50).map((entry, i) => (
+              <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-2 border-l border-white/5 pl-6 pb-2">
+                <div className="flex items-center justify-between">
+                  <span className={`text-[9px] font-bold uppercase tracking-widest ${entry.role === 'ai' ? 'text-violet-500' : 'text-white/30'}`}>
+                    {entry.role === 'ai' ? 'AI AGENT' : 'SYSTEM/USER'}
+                  </span>
+                  <span className="text-[9px] text-white/20">{new Date(entry.created_at).toLocaleTimeString()}</span>
+                </div>
+                <p className="text-[14px] text-white leading-relaxed lowercase">{entry.metadata?.text || entry.event}</p>
+              </motion.div>
+            ))}
+            <div ref={transcriptEndRef} />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Col 1 — Transcript */}
-          <div className="glass-card flex flex-col" style={{ height: 460 }}>
-            <div
-              className="flex items-center justify-between px-4 py-3"
-              style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
-            >
-              <div className="flex items-center gap-2">
-                <MessageSquare size={14} style={{ color: '#3B82F6' }} />
-                <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Live Transcript
-                </span>
-              </div>
-              <div
-                className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                style={{ background: 'rgba(59,130,246,0.12)', color: '#3B82F6', border: '1px solid rgba(59,130,246,0.2)' }}
-              >
-                Auto-scrolling
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto ops-scroll px-3 py-3 flex flex-col gap-3">
-              {events.map((entry, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: entry.event === 'ai_response' ? -8 : 8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05, duration: 0.3 }}
-                  className="flex flex-col gap-0.5"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <div
-                      style={{
-                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                        background: entry.event === 'ai_response' ? '#3B82F6' : '#64748B',
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 10, fontWeight: 600,
-                        color: entry.role === 'ai' ? '#3B82F6' : 'var(--text-secondary)',
-                      }}
-                    >
-                      {entry.event === 'ai_response' ? 'AI Agent' : 'System/User'}
-                    </span>
-                    <span className="ml-auto" style={{ fontSize: 9, color: 'var(--text-muted)' }}>{new Date(entry.created_at).toLocaleTimeString()}</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5, paddingLeft: 10 }}>
-                    {entry.metadata?.text || entry.event}
-                  </p>
-                </motion.div>
-              ))}
-              <div ref={transcriptEndRef} />
-            </div>
-
-            <div
-              className="px-3 pb-3"
-              style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 10, flexShrink: 0 }}
-            >
-              <div
-                className="px-3 py-2 rounded-lg text-xs"
-                style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-muted)',
-                  cursor: 'not-allowed',
-                }}
-              >
-                Transcript is auto-generated...
-              </div>
+        {/* Status */}
+        <div className="flex flex-col gap-8">
+          <div className="flex items-center justify-between border-b border-white/5 pb-6">
+            <h3 className="text-[20px] font-medium text-white lowercase">session status</h3>
+            <div className="flex items-center gap-2">
+               <div className={`w-2 h-2 rounded-full ${sessions.length > 0 ? 'bg-violet-500 shadow-[0_0_10px_#7C3AED]' : 'bg-white/10'}`} />
+               <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">{sessions.length > 0 ? 'LIVE' : 'STANDBY'}</span>
             </div>
           </div>
-
-          {/* Col 2 — Session Status */}
-          <div className="glass-card flex flex-col gap-0" style={{ height: 460, overflow: 'hidden' }}>
-            <div
-              className="px-4 py-3 flex items-center justify-between"
-              style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
-            >
-              <div className="flex items-center gap-2">
-                <Activity size={14} style={{ color: '#3B82F6' }} />
-                <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Session Status
-                </span>
+          
+          <div className="flex flex-col gap-12">
+            {sessions[0] && (
+              <div className="flex flex-col gap-4">
+                <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-bold">LATEST ACTIVITY</span>
+                <div className="text-[32px] font-medium text-white leading-tight lowercase">{sessions[0].profiles?.name || 'anonymous'}</div>
+                <div className="text-[12px] font-mono text-white/20 lowercase">TKN-{sessions[0].id.slice(0, 8)}</div>
               </div>
-              <div className="flex items-center gap-1">
-                <div className={`w-1.5 h-1.5 rounded-full ${sessions.find(s => s.is_active_session) ? 'bg-blue-400 animate-pulse' : 'bg-slate-500'}`} />
-                <span style={{ fontSize: 10, color: sessions.find(s => s.is_active_session) ? '#3B82F6' : 'var(--text-muted)' }}>
-                  {sessions.find(s => s.is_active_session) ? 'LIVE' : 'STANDBY'}
-                </span>
+            )}
+
+            <div className="flex flex-col gap-6">
+              <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-bold">PROGRESSION</span>
+              <div className="flex flex-col gap-4">
+                {['KYC', 'BUREAU', 'OFFER', 'COMPLETE'].map((s, i) => {
+                  const currentIdx = ['kyc', 'bureau', 'offer', 'completed'].indexOf(sessions[0]?.application_stage || 'kyc');
+                  const isDone = i <= currentIdx;
+                  return (
+                    <div key={s} className="flex items-center justify-between">
+                      <span className={`text-[12px] font-bold tracking-tight ${isDone ? 'text-white' : 'text-white/10'}`}>{s}</span>
+                      <div className={`w-12 h-[1px] ${isDone ? 'bg-white' : 'bg-white/10'}`} />
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto ops-scroll px-4 py-4 flex flex-col gap-4">
-              {/* Applicant */}
-              {(() => {
-                const latest = sessions[0] || {};
-                return (
-                  <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.08em' }}>LATEST ACTIVITY</div>
-                    <div className="flex items-center gap-3">
-                      <div
-                        style={{
-                          width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                          background: 'rgba(59,130,246,0.15)', border: '1.5px solid rgba(59,130,246,0.3)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        <User size={15} style={{ color: '#3B82F6' }} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{latest.profiles?.name || 'Waiting for connection...'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{latest.id ? `#${latest.id.slice(0, 8)}` : 'No active sessions'}</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Stage progress */}
-              {(() => {
-                const latest = sessions[0];
-                if (!latest) return null;
-                const stages = ['kyc', 'bureau', 'offer', 'completed'];
-                const currentIdx = stages.indexOf(latest.application_stage);
-                return (
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>STAGE PROGRESS</div>
-                    <div className="flex flex-col gap-2">
-                      {['KYC Extraction', 'Bureau Check', 'Loan Offer', 'Disbursement'].map((s, i) => (
-                        <div key={s} className="flex items-center gap-2.5">
-                          <div
-                            style={{
-                              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                              background: i < currentIdx ? 'rgba(16,185,129,0.2)' : i === currentIdx ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
-                              border: i < currentIdx ? '1px solid rgba(16,185,129,0.4)' : i === currentIdx ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                          >
-                            {i < currentIdx
-                              ? <CheckCircle size={10} style={{ color: '#10B981' }} />
-                              : i === currentIdx
-                                ? <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3B82F6' }} />
-                                : <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#475569' }} />
-                            }
-                          </div>
-                          <div
-                            className="flex-1 h-1 rounded-full overflow-hidden"
-                            style={{ background: 'rgba(255,255,255,0.06)' }}
-                          >
-                            <div
-                              style={{
-                                height: '100%',
-                                width: i < currentIdx ? '100%' : i === currentIdx ? '40%' : '0%',
-                                background: i < currentIdx ? '#10B981' : '#3B82F6',
-                                borderRadius: 2,
-                              }}
-                            />
-                          </div>
-                          <span style={{ fontSize: 11, color: i === currentIdx ? 'var(--text-primary)' : i < currentIdx ? '#10B981' : 'var(--text-muted)', minWidth: 80, textAlign: 'right' }}>{s}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Session timer */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>SESSION TIME</div>
-                  <SessionTimer />
-                </div>
-                <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>CREDIT SCORE</div>
-                  <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 700, color: '#10B981' }}>{sessions[0]?.bureau_score || '0'}</div>
-                </div>
+            <div className="grid grid-cols-2 gap-12 pt-8 border-t border-white/5">
+              <div className="flex flex-col">
+                 <span className="text-[9px] text-white/30 uppercase tracking-widest font-bold mb-2">SCORE</span>
+                 <div className="text-[24px] font-medium text-white">{sessions[0]?.bureau_score || '—'}</div>
               </div>
-
-              {/* Risk gauge */}
-              {(() => {
-                const latest = sessions[0] || {};
-                const score = latest.fraud_risk_score || 0;
-                const label = score > 60 ? 'High' : score > 30 ? 'Medium' : 'Low';
-                const color = score > 60 ? '#EF4444' : score > 30 ? '#F59E0B' : '#10B981';
-                return (
-                  <div className="glass-card p-3" style={{ borderRadius: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.08em' }}>AI RISK SCORE</div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span style={{ fontSize: 13, fontWeight: 700, color: color }}>{label}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{score} / 100</span>
-                    </div>
-                    <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${score}%` }}
-                        transition={{ duration: 1, ease: 'easeOut', delay: 0.4 }}
-                        style={{ height: '100%', background: `linear-gradient(to right, #10B981, ${color})`, borderRadius: 3 }}
-                      />
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Low risk</span>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>High risk</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* Col 3 — Fraud & Risk */}
-          <div className="glass-card flex flex-col" style={{ height: 460 }}>
-            <div
-              className="px-4 py-3 flex items-center justify-between"
-              style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
-            >
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={14} style={{ color: '#10B981' }} />
-                <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Fraud & Risk
-                </span>
+              <div className="flex flex-col">
+                 <span className="text-[9px] text-white/30 uppercase tracking-widest font-bold mb-2">ELAPSED</span>
+                 <SessionTimer />
               </div>
-              <span
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ color: '#10B981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}
-              >
-                0 Alerts
-              </span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto ops-scroll px-4 py-4 flex flex-col gap-3">
-              {/* Real-time checks */}
-              {[
-                { check: 'Liveness Detection', status: 'pass', score: '0.94', note: '32 frames analyzed' },
-                { check: 'Document Authenticity', status: 'pass', score: '0.98', note: 'PAN + Aadhaar verified' },
-                { check: 'Face Match', status: 'pass', score: '0.89', note: 'ID photo matches live feed' },
-                { check: 'Device Fingerprint', status: 'pass', score: '—', note: 'No suspicious patterns' },
-                { check: 'CIBIL Bureau Pull', status: 'pass', score: '681', note: 'TransUnion CIBIL v2' },
-                { check: 'AML Screening', status: 'pass', score: '—', note: 'Not on watchlist' },
-                { check: 'Income Verification', status: 'warn', score: '0.72', note: 'Declared vs estimated delta' },
-              ].map((item) => (
-                <div key={item.check} className="glass-card p-3" style={{ borderRadius: 10 }}>
-                  <div className="flex items-start justify-between mb-1">
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{item.check}</span>
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                      style={{
-                        color: item.status === 'pass' ? '#10B981' : '#F59E0B',
-                        background: item.status === 'pass' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                        border: item.status === 'pass' ? '1px solid rgba(16,185,129,0.25)' : '1px solid rgba(245,158,11,0.25)',
-                      }}
-                    >
-                      {item.status === 'pass' ? '✓ Pass' : '⚠ Warn'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.note}</span>
-                    {item.score !== '—' && (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: item.status === 'pass' ? '#10B981' : '#F59E0B' }}>
-                        {item.score}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         </div>
-      </motion.div>
+
+        {/* Risk & Fraud */}
+        <div className="flex flex-col gap-8">
+          <div className="flex items-center justify-between border-b border-white/5 pb-6">
+            <h3 className="text-[20px] font-medium text-white lowercase">fraud & risk</h3>
+            <span className="text-[10px] text-violet-500 font-bold uppercase tracking-widest">Active</span>
+          </div>
+
+          <div className="flex flex-col gap-10">
+            {(() => {
+              const score = sessions[0]?.fraud_risk_score || 0;
+              return (
+                <div className="flex flex-col gap-4">
+                  <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-bold">AI RISK SCORE</span>
+                  <div className="text-[64px] font-medium text-white leading-none">{score}<span className="text-[24px] text-white/20">/100</span></div>
+                  <div className="w-full h-[1px] bg-white/5 relative">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${score}%` }} className="absolute inset-0 bg-violet-500" />
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="flex flex-col gap-6">
+              <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-bold">REAL-TIME ANALYTICS</span>
+              <div className="flex flex-col gap-4">
+                {[
+                  { check: 'Liveness Detect', status: 'pass' },
+                  { check: 'Document Auth', status: 'pass' },
+                  { check: 'Face Match', status: 'pass' },
+                  { check: 'AML Screening', status: 'pass' },
+                ].map(item => (
+                  <div key={item.check} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                    <span className="text-[12px] text-white/50 lowercase">{item.check}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-violet-500">Verified</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
+
 
 /* ─── Live Sessions ──────────────────────────────────── */
 function LiveSessionsSection({ data }) {
   const { sessions } = data;
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-5">
-        <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-          Session Log
-        </h2>
-        <div className="flex items-center gap-2">
-          <div className="glass-pill flex items-center gap-2 px-3 py-2">
-            <Search size={13} style={{ color: 'var(--text-muted)' }} />
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Search sessions...</span>
+    <div className="flex flex-col gap-12">
+      <div className="flex items-center justify-between border-b border-white/5 pb-8">
+        <h2 className="text-[32px] font-medium text-white lowercase">session repository</h2>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 text-white/30 border border-white/5 px-6 py-3 rounded-full hover:border-white/20 transition-colors">
+            <Search size={14} />
+            <span className="text-[12px] lowercase tracking-tight">search archive...</span>
           </div>
-          <button className="glass-pill p-2">
-            <Filter size={13} style={{ color: 'var(--text-muted)' }} />
-          </button>
-          <button className="glass-pill p-2">
-            <Download size={13} style={{ color: 'var(--text-muted)' }} />
+          <button className="text-white/30 hover:text-white transition-colors">
+            <Filter size={18} />
           </button>
         </div>
       </div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                {['Session ID', 'Applicant', 'Amount', 'Credit Score', 'Duration', 'Risk', 'Stage', 'Status'].map(h => (
-                  <th
-                    key={h}
-                    className="px-5 py-3 text-left"
-                    style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((s, i) => {
-                const sc = statusCfg[s.status] || statusCfg.live;
-                const rc = riskCfg[s.fraud_risk_score > 60 ? 'high' : s.fraud_risk_score > 30 ? 'medium' : 'low'] || riskCfg.low;
-                const SI = sc.icon;
-                return (
-                  <motion.tr
-                    key={s.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.06 }}
-                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.15s ease' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <td className="px-5 py-3.5" style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.id}</td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.profiles?.name || 'Unknown'}</td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{s.metadata?.amount || 'N/A'}</td>
-                    <td className="px-5 py-3.5">
-                      <span style={{ fontSize: 13, fontWeight: 700, color: (s.fraud_risk_score||0) < 30 ? '#10B981' : (s.fraud_risk_score||0) < 60 ? '#F59E0B' : '#EF4444' }}>
-                        {s.fraud_risk_score || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(s.created_at).toLocaleDateString()}</td>
-                    <td className="px-5 py-3.5">
-                      <span style={{ fontSize: 11, fontWeight: 600, color: rc.color }}>{rc.label}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <div style={{ height: 4, width: 60, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${(['kyc','bureau','offer','completed'].indexOf(s.application_stage) + 1)/4 * 100}%`, background: '#3B82F6', borderRadius: 2 }} />
-                        </div>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.application_stage}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                        style={{ color: sc.color, background: sc.bg, border: `1px solid ${sc.color}40` }}
-                      >
-                        <SI size={10} />
-                        {sc.label}
-                      </span>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+      <div className="flex flex-col">
+        {sessions.map((s, i) => {
+          const sc = statusCfg[s.status] || statusCfg.live;
+          return (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="group py-10 border-b border-white/5 last:border-0 flex items-center justify-between hover:bg-white/[0.01] transition-colors -mx-10 px-10"
+            >
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">TKN-{s.id.slice(0, 8)}</span>
+                <span className="text-[20px] font-medium text-white lowercase">{s.profiles?.name || 'anonymous applicant'}</span>
+              </div>
+
+              <div className="flex gap-20 items-center">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Amount</span>
+                  <span className="text-[16px] text-white font-medium">{s.metadata?.amount || 'N/A'}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Risk Score</span>
+                  <span className={`text-[16px] font-medium ${s.fraud_risk_score > 60 ? 'text-red-500' : 'text-white'}`}>{s.fraud_risk_score || '0'}</span>
+                </div>
+                <div className="flex flex-col gap-1 w-32">
+                   <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Stage</span>
+                   <div className="w-full h-[1px] bg-white/5 relative mt-2">
+                     <div className="absolute inset-0 bg-white" style={{ width: `${(['kyc','bureau','offer','completed'].indexOf(s.application_stage) + 1)/4 * 100}%` }} />
+                   </div>
+                </div>
+                <div className="w-32 flex justify-end">
+                   <span className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 border rounded-full ${s.status === 'live' ? 'border-violet-500 text-violet-500 animate-pulse' : 'border-white/10 text-white/40'}`}>
+                     {sc.label}
+                   </span>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 /* ─── Fraud Signals ──────────────────────────────────── */
 function FraudSignalsSection({ data }) {
-  const { flags } = data;
-  const distrib = [
-    { label: 'No Risk',  count: 28, color: '#10B981' },
-    { label: 'Low',      count: 12, color: '#3B82F6'  },
-    { label: 'Medium',   count: 6,  color: '#F59E0B'  },
-    { label: 'High',     count: 2,  color: '#EF4444'  },
-  ];
-  const total = distrib.reduce((a, b) => a + b.count, 0);
+  const { flags, sessions } = data;
 
   return (
-    <div className="p-6 flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-          Fraud Signals
-        </h2>
-        <div
-          className="glass-pill px-3 py-1.5 flex items-center gap-1.5"
-          style={{ fontSize: 12, color: '#10B981' }}
-        >
-          <ShieldCheck size={12} style={{ color: '#10B981' }} />
-          Model: fraud-api v2.1
-        </div>
-      </div>
-
+    <div className="flex flex-col gap-24">
       {/* Distribution */}
       {(() => {
         const counts = { low: 0, medium: 0, high: 0, clear: 0 };
@@ -608,34 +379,22 @@ function FraudSignalsSection({ data }) {
           else counts.low++;
         });
 
-        const activeDistrib = [
-          { label: 'No Risk',  count: counts.clear,  color: '#10B981' },
-          { label: 'Low',      count: counts.low,    color: '#3B82F6'  },
-          { label: 'Medium',   count: counts.medium, color: '#F59E0B'  },
-          { label: 'High',     count: counts.high,   color: '#EF4444'  },
-        ];
         const activeTotal = sessions.length || 1;
+        const distrib = [
+          { label: 'no risk', count: counts.clear, color: 'bg-white/10' },
+          { label: 'low', count: counts.low, color: 'bg-white/20' },
+          { label: 'medium', count: counts.medium, color: 'bg-violet-400' },
+          { label: 'high', count: counts.high, color: 'bg-red-500' },
+        ];
 
         return (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {activeDistrib.map(d => (
-              <motion.div
-                key={d.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-4"
-              >
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>{d.label.toUpperCase()} RISK</div>
-                <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 28, fontWeight: 700, color: d.color, marginBottom: 8 }}>
-                  {d.count}
-                </div>
-                <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(d.count / activeTotal) * 100}%` }}
-                    transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
-                    style={{ height: '100%', background: d.color, borderRadius: 2 }}
-                  />
+          <div className="grid grid-cols-4 gap-20 py-12 border-y border-white/5">
+            {distrib.map(d => (
+              <motion.div key={d.label} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
+                <span className="text-[10px] uppercase tracking-widest text-white/30 font-bold">{d.label}</span>
+                <div className="text-[48px] font-medium text-white leading-none">{d.count}</div>
+                <div className="w-full h-[1px] bg-white/5 relative">
+                   <div className={`absolute inset-0 ${d.color}`} style={{ width: `${(d.count / activeTotal) * 100}%` }} />
                 </div>
               </motion.div>
             ))}
@@ -643,128 +402,93 @@ function FraudSignalsSection({ data }) {
         );
       })()}
 
-      {/* Events table */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="glass-card overflow-hidden">
-        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-          <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-            Recent Fraud Events
-          </span>
-        </div>
+      {/* Events */}
+      <div className="flex flex-col gap-12">
+        <h3 className="text-[32px] font-medium text-white lowercase">anomalous flags</h3>
         <div className="flex flex-col">
-          {flags.map((f, i) => {
-            const sc = sevCfg[f.severity] || sevCfg.clear;
-            return (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.07 }}
-                className="flex items-start gap-4 px-5 py-4"
-                style={{ borderBottom: i < FRAUD_SIGNALS.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-              >
-                <div
-                  className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5"
-                  style={{ color: sc.color, background: sc.bg, border: `1px solid ${sc.color}40` }}
-                >
-                  {sc.label}
+          {flags.map((f, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="group py-12 border-b border-white/5 last:border-0 flex items-start justify-between -mx-10 px-10"
+            >
+              <div className="flex flex-col gap-4 max-w-2xl">
+                <div className="flex items-center gap-4">
+                  <span className={`text-[9px] font-bold uppercase tracking-widest px-3 py-1 border rounded-full ${f.severity === 'high' ? 'border-red-500 text-red-500' : 'border-white/10 text-white/40'}`}>
+                    {f.severity}
+                  </span>
+                  <span className="text-[10px] font-mono text-white/20 uppercase">APPID-{f.application_id.slice(0, 8)}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{f.flag_type}</span>
-                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{f.application_id}</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{f.description}</p>
-                </div>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(f.created_at).toLocaleTimeString()}</span>
-              </motion.div>
-            );
-          })}
+                <h4 className="text-[20px] font-medium text-white lowercase leading-tight">{f.flag_type}</h4>
+                <p className="text-[14px] text-white/40 leading-relaxed capitalize">{f.description}</p>
+              </div>
+              <span className="text-[12px] text-white/20 font-mono italic">{new Date(f.created_at).toLocaleTimeString()}</span>
+            </motion.div>
+          ))}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
 
 /* ─── Transcripts section ────────────────────────────── */
 function TranscriptsSection({ data }) {
-  const { sessions, events } = data;
-  /*
-    { id: 'AF-7825', name: 'Priya Sharma',  date: 'Today, 14:10', duration: '2m 41s', status: 'approved', lines: 22 },
-    { id: 'AF-7823', name: 'Anita Desai',   date: 'Today, 13:48', duration: '3m 05s', status: 'approved', lines: 18 },
-    { id: 'AF-7821', name: 'Sunita Rao',    date: 'Today, 12:30', duration: '3m 50s', status: 'approved', lines: 25 },
-    { id: 'AF-7820', name: 'Arjun Patel',   date: 'Today, 11:14', duration: '4m 22s', status: 'approved', lines: 28 },
-    { id: 'AF-7819', name: 'Meera Gupta',   date: 'Today, 10:55', duration: '1m 55s', status: 'pending',  lines: 12 },
-    { id: 'AF-7822', name: 'Vikram Nair',   date: 'Today, 10:02', duration: '2m 18s', status: 'rejected', lines: 14 },
-  */
+  const { sessions } = data;
+
   return (
-    <div className="p-6 flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-          Session Transcripts
-        </h2>
-        <div className="flex items-center gap-2">
-          <div className="glass-pill flex items-center gap-2 px-3 py-2">
-            <Search size={13} style={{ color: 'var(--text-muted)' }} />
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Search transcripts...</span>
-          </div>
-          <button className="glass-pill px-3 py-2 flex items-center gap-1.5" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            <Download size={13} /> Export All
-          </button>
+    <div className="flex flex-col gap-12">
+      <div className="flex items-center justify-between border-b border-white/5 pb-8">
+        <h2 className="text-[32px] font-medium text-white lowercase">conversation archive</h2>
+        <div className="flex items-center gap-4 text-white/30 border border-white/5 px-6 py-3 rounded-full">
+          <Search size={14} />
+          <span className="text-[12px] lowercase tracking-tight">find by keyword...</span>
         </div>
       </div>
 
-      <motion.div
-        initial="hidden" animate="visible" variants={stagger}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3"
-      >
-        {sessions.map(s => {
-          const sc = statusCfg[s.status] || statusCfg.live || statusCfg['approved'];
-          const SI = sc.icon;
-          return (
-            <motion.div
-              key={s.id}
-              variants={fadeItem}
-              className="glass-card p-4 cursor-pointer"
-              style={{ borderRadius: 12, transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)';
-                e.currentTarget.style.boxShadow = '0 0 0 1px rgba(59,130,246,0.2)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--glass-border)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{s.profiles?.name || 'Unknown'}</div>
-                  <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.id}</div>
-                </div>
-                <span
-                  className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ color: sc.color, background: sc.bg, border: `1px solid ${sc.color}40` }}
-                >
-                  <SI size={9} /> {sc.label}
-                </span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        {sessions.map((s, i) => (
+          <motion.div
+            key={s.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05 }}
+            className="flex flex-col gap-6 p-10 border border-white/5 hover:border-white/20 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">TKN-{s.id.slice(0, 8)}</span>
+                <span className="text-[24px] font-medium text-white lowercase leading-tight">{s.profiles?.name || 'anonymous'}</span>
               </div>
-              <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-                <span>{new Date(s.created_at).toLocaleString()}</span>
-                <span>Live</span>
-                <span></span>
-                <button
-                  className="ml-auto flex items-center gap-1 transition-colors duration-150 hover:text-blue-400"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  <Eye size={11} /> View
-                </button>
-                <button className="flex items-center gap-1 transition-colors duration-150 hover:text-blue-400" style={{ color: 'var(--text-muted)' }}>
-                  <Download size={11} /> Export
-                </button>
+              <button className="p-4 rounded-full border border-white/5 text-white/30 hover:bg-white hover:text-black hover:border-white transition-all">
+                <Eye size={18} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-8 py-4 border-y border-white/5">
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Date</span>
+                <span className="text-[12px] text-white/60 lowercase tracking-tight">{new Date(s.created_at).toLocaleDateString()}</span>
               </div>
-            </motion.div>
-          );
-        })}
-      </motion.div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Status</span>
+                <span className="text-[12px] text-violet-500 lowercase font-bold">{s.status}</span>
+              </div>
+            </div>
+
+            <p className="text-[14px] text-white/30 leading-relaxed italic line-clamp-2 gap-2 flex flex-col">
+               <span className="text-violet-500 uppercase text-[9px] font-bold tracking-widest block not-italic">Recent Segment</span>
+               "Yes I understand the terms of this agreement and I'd like to proceed with the primary offer of 5,00,000 INR..."
+            </p>
+
+            <div className="flex gap-4">
+               <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download PDF</button>
+               <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download Audio</button>
+            </div>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -790,13 +514,14 @@ export default function OpsDashboard() {
   const [active, setActive] = useState('overview');
   const opsData = useOpsData();
 
-  // Prevent body overflow
+  // Force dark bg
   useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
+    document.body.style.backgroundColor = '#0A0A0A';
+    document.body.style.overflow = 'auto'; // allow scroll for the whole page
+    return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
-    const sections = {
+  const sections = {
     overview:    <OverviewSection data={opsData} />,
     live:        <LiveSessionsSection data={opsData} />,
     fraud:       <FraudSignalsSection data={opsData} />,
@@ -804,24 +529,28 @@ export default function OpsDashboard() {
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed', top: 64, left: 0, right: 0, bottom: 0,
-        display: 'flex', zIndex: 10, overflow: 'hidden',
-        background: 'var(--bg-base)',
-      }}
-    >
-      <Sidebar active={active} setActive={setActive} />
+    <div className="min-h-screen pt-32 pb-20 px-10 flex flex-col items-center">
+      <TopNav active={active} setActive={setActive} />
 
-      {/* Main scroll area */}
-      <div className="flex-1 overflow-y-auto ops-scroll">
+      <div className="w-full max-w-[1400px]">
+        {/* Massive Header */}
+        <header className="mb-20">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+            <span className="text-[12px] uppercase tracking-[0.4em] text-violet-500 font-bold mb-6 block">Operations Control</span>
+            <h1 className="text-[120px] font-medium text-white leading-[0.9] tracking-[-0.04em] lowercase">
+              {active} <br />
+              <span className="opacity-20 italic">monitor</span>
+            </h1>
+          </motion.div>
+        </header>
+
         <AnimatePresence mode="wait">
           <motion.div
             key={active}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.25 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
             {sections[active]}
           </motion.div>

@@ -23,18 +23,16 @@ function AppLayout() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
 
-  // Footer not shown on video call page
-  const showFooter = pathname !== '/session' && !pathname.startsWith('/session/');
+  // Navbar and Footer not shown on video call page, ops, and compliance
+  const noNavRoutes = ['/session', '/ops', '/compliance'];
+  const showNavAndFooter = !noNavRoutes.some(route => pathname === route || pathname.startsWith(route + '/'));
 
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ background: 'var(--bg-base)', color: 'var(--text-primary)' }}
-    >
+    <div className="app-wrapper">
       <ScrollToTop />
-      <Navbar theme={theme} onToggleTheme={toggle} />
+      {showNavAndFooter && <Navbar theme={theme} onToggleTheme={toggle} />}
 
-      <main className="flex-1">
+      <main className="flex-1 flex flex-col relative z-0">
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth" element={<AuthPage />} />
@@ -58,7 +56,7 @@ function AppLayout() {
         </Routes>
       </main>
 
-      {showFooter && <Footer />}
+      {showNavAndFooter && <Footer />}
     </div>
   );
 }

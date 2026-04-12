@@ -1,62 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import {
   Shield, AlertTriangle, FileText, Download, CheckCircle,
-  Eye, Lock, Zap, Search, Globe, ChevronRight, ChevronDown, ListCheck, LayoutDashboard
+  Eye, Lock, Zap, ChevronRight, LayoutDashboard, Search
 } from 'lucide-react';
 
 const FRAMEWORKS = [
   {
     icon: Shield,
     title: 'KYC & AML (RBI MD)',
-    status: 'compliant',
     badge: 'Compliant',
-    version: 'PMLA 2002 + 2023 Amendments',
-    last: 'Apr 2026',
     description: 'Video KYC (V-KYC) complies with RBI master direction on KYC. AML screening uses FATF watchlists and PEP databases.',
-    checks: ['Video KYC per RBI MD/KYC/2016', 'PEP & sanctions screening', 'UBO identification', 'STR filing capability'],
+    version: 'PMLA 2002 + 2023 Amendments',
   },
   {
     icon: Lock,
     title: 'Data Privacy (DPDPA 2023)',
-    status: 'compliant',
     badge: 'Certified',
+    description: 'DPDPA 2023 consent management, data minimization, and right-to-erasure workflows. ISO 27001:2022 certified.',
     version: 'DPDPA 2023 + ISO 27001',
-    last: 'Feb 2026',
-    description: 'DPDPA 2023 consent management, data minimization, and right-to-erasure workflows. ISO 27001:2022 certification in progress.',
-    checks: ['Explicit consent capture', 'Data minimization enforced', 'Right to erasure API', 'Data localisation in India'],
   },
   {
     icon: Eye,
     title: 'Liveness & Fraud Detection',
-    status: 'monitoring',
     badge: 'Live',
+    description: 'Real-time 3D liveness detection, deepfake identification, device fingerprinting and velocity checks.',
     version: 'face-api.js v0.22 + Custom ML',
-    last: 'Apr 2026',
-    description: 'Real-time 3D liveness detection, deepfake identification, device fingerprinting and velocity checks run on every session.',
-    checks: ['3D liveness score > 0.85', 'Deepfake detection model', 'Device risk scoring', 'Session velocity limits'],
   },
   {
     icon: FileText,
     title: 'Audit Logs & Record Keeping',
-    status: 'compliant',
     badge: 'Enabled',
+    description: 'AI decision traces, transcripts, and consent events are logged to an immutable trail retained for 7 years.',
     version: 'Immutable append-only store',
-    last: 'Apr 2026',
-    description: 'Every AI decision, transcript line, document capture, and consent event is logged to an immutable audit trail retained for 7 years.',
-    checks: ['Session recordings archived', 'AI decision trace logging', 'Consent hash stored (SHA-256)', '7-year retention policy'],
   },
 ];
-
-const sevCfg = {
-  success: { color: '#10B981', bg: 'rgba(16,185,129,0.1)',  dot: '#10B981', label: 'OK'    },
-  info:    { color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',  dot: '#3B82F6', label: 'Info'  },
-  error:   { color: '#EF4444', bg: 'rgba(239,68,68,0.1)',   dot: '#EF4444', label: 'Alert' },
-  warning: { color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  dot: '#F59E0B', label: 'Warn'  },
-  clear:   { color: '#64748B', bg: 'rgba(100,116,139,0.1)', dot: '#64748B', label: 'Clear' },
-};
 
 function useComplianceData() {
   const [flags, setFlags] = useState([]);
@@ -91,143 +71,151 @@ export default function CompliancePage() {
   const stagger = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
   const fadeItem = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } };
 
+  // Set pure black bg
+  useEffect(() => {
+    document.body.style.backgroundColor = '#0A0A0A';
+    return () => { document.body.style.backgroundColor = ''; };
+  }, []);
+
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-card)' }}>
-      {/* Sidebar */}
-      <div className="flex flex-col" style={{ width: 220, borderRight: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.015)' }}>
-        <div className="flex items-center gap-2 px-4 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <Shield size={18} style={{ color: '#10B981' }} />
-          <span style={{ fontFamily: 'Sora, sans-serif', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Compliance</span>
-        </div>
-        <div className="flex flex-col px-2 py-3 gap-1 flex-1">
-          <button className="sidebar-link active text-left flex items-center gap-2" style={{ color: '#10B981' }}>
-            <ListCheck size={14} /> Center
+    <div className="min-h-screen bg-[#0A0A0A] text-white pt-32 pb-20 px-10 flex flex-col items-center">
+      {/* Top Nav Pill */}
+      <div className="fixed top-8 left-0 right-0 z-[100] flex justify-center pointer-events-none">
+        <motion.nav 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="pointer-events-auto flex items-center gap-1 bg-[#141414]/80 backdrop-blur-2xl border border-white/5 px-4 py-2 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+        >
+          <button 
+            onClick={() => navigate('/ops')}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[12px] font-bold uppercase tracking-[0.1em] text-white/40 hover:text-white transition-all group"
+          >
+            <LayoutDashboard size={14} className="group-hover:text-violet-500 transition-colors" />
+            Control Center
           </button>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 12px' }} />
-          <button className="sidebar-link text-left flex items-center gap-2" onClick={() => navigate('/ops')}>
-            <LayoutDashboard size={14} /> Ops Dash
-          </button>
-        </div>
+          <div className="w-[1px] h-6 bg-white/10 mx-2" />
+          <span className="px-6 py-2.5 text-[12px] font-bold uppercase tracking-[0.1em] text-violet-500">Compliance Center</span>
+        </motion.nav>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col h-screen overflow-y-auto ops-scroll">
-        <div className="p-8 max-w-5xl mx-auto w-full flex flex-col gap-8">
-          <div>
-            <h1 style={{ fontFamily: 'Sora, sans-serif', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>Regulatory Compliance</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>Real-time monitoring of regulatory frameworks</p>
+      <div className="w-full max-w-[1400px]">
+        {/* Massive Header */}
+        <header className="mb-24">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+            <span className="text-[12px] uppercase tracking-[0.4em] text-violet-500 font-bold mb-6 block">Regulatory Shield</span>
+            <h1 className="text-[120px] font-medium text-white leading-[0.9] tracking-[-0.04em] lowercase">
+              regulatory <br />
+              <span className="opacity-20 italic">compliance</span>
+            </h1>
+          </motion.div>
+        </header>
+
+        {/* Frameworks Row */}
+        <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 md:grid-cols-4 gap-12 py-16 border-y border-white/5 mb-32">
+          {FRAMEWORKS.map((f, i) => (
+            <motion.div key={i} variants={fadeItem} className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <f.icon size={20} className="text-violet-500" />
+                <span className="px-3 py-1 border border-violet-500/20 text-violet-500 text-[9px] font-bold uppercase tracking-widest rounded-full">{f.badge}</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <h3 className="text-[18px] font-medium lowercase leading-tight">{f.title}</h3>
+                <p className="text-[12px] text-white/30 leading-relaxed font-medium">{f.description}</p>
+              </div>
+              <span className="text-[10px] text-white/10 font-mono uppercase mt-auto">{f.version}</span>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* Audit Trail Section */}
+        <section className="flex flex-col gap-12 mb-32">
+          <div className="flex items-center justify-between border-b border-white/5 pb-8">
+            <h2 className="text-[32px] font-medium lowercase">immutable audit trail</h2>
+            <button className="flex items-center gap-2 text-white/30 hover:text-white transition-colors">
+              <Download size={16} />
+              <span className="text-[12px] uppercase tracking-widest font-bold">Export Logs</span>
+            </button>
           </div>
 
-          <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {FRAMEWORKS.map((f, i) => (
-              <motion.div key={i} variants={fadeItem} className="glass-card p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2">
-                    <f.icon size={16} style={{ color: '#3B82F6' }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{f.title}</span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{
-                    color: f.status === 'compliant' ? '#10B981' : '#F59E0B',
-                    background: f.status === 'compliant' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)'
-                  }}>
-                    {f.badge}
-                  </span>
+          <div className="flex flex-col">
+            {audits.map((log, i) => (
+              <motion.div 
+                key={log.id} 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                className="group py-10 border-b border-white/5 last:border-0 flex items-center justify-between -mx-10 px-10 hover:bg-white/[0.01] transition-colors"
+              >
+                <div className="flex flex-col gap-1 w-64">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Report Hash</span>
+                  <span className="text-[14px] font-mono text-white/60 lowercase">{log.sha256_hash?.substring(0, 16)}...</span>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{f.description}</p>
+                <div className="flex flex-col gap-1 w-64">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">App ID</span>
+                  <span className="text-[14px] font-mono text-white lowercase">APP-{log.application_id.slice(0, 8)}</span>
+                </div>
+                <div className="flex flex-col gap-1 w-64">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Timestamp</span>
+                  <span className="text-[14px] text-white/60 lowercase">{new Date(log.created_at).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-end gap-4 w-48">
+                  <button 
+                    onClick={() => {
+                        const fileData = JSON.stringify(log.report_json, null, 2);
+                        const blob = new Blob([fileData], {type: "text/plain"});
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.download = `audit_${log.application_id}.json`;
+                        link.href = url; link.click();
+                    }}
+                    className="text-[11px] font-bold uppercase tracking-widest px-6 py-3 border border-white/5 text-white/30 hover:border-white hover:text-white transition-all"
+                  >
+                    Details
+                  </button>
+                </div>
               </motion.div>
             ))}
-          </motion.div>
+            {audits.length === 0 && <p className="py-20 text-center text-white/20 lowercase italic">No audit records found in repository.</p>}
+          </div>
+        </section>
 
-          {/* Audit Logs */}
-          <div className="glass-card flex flex-col mt-4">
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Immutable Audit Trail</h2>
-              <button className="glass-pill px-3 py-1 flex items-center gap-1.5 text-xs text-blue-400">
-                <Download size={12} /> Export CSV
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <th className="px-5 py-3 font-medium">Report Hash</th>
-                    <th className="px-5 py-3 font-medium">Application ID</th>
-                    <th className="px-5 py-3 font-medium">Time</th>
-                    <th className="px-5 py-3 font-medium">Generated By</th>
-                    <th className="px-5 py-3 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audits.map(log => (
-                    <tr key={log.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                      <td className="px-5 py-3" style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{log.sha256_hash?.substring(0, 8)}...</td>
-                      <td className="px-5 py-3" style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{log.application_id}</td>
-                      <td className="px-5 py-3">{new Date(log.created_at).toLocaleString()}</td>
-                      <td className="px-5 py-3">{log.generated_by}</td>
-                      <td className="px-5 py-3 text-right">
-                        <button className="text-blue-400 hover:text-blue-300 mr-3" onClick={() => {
-                          const fileData = JSON.stringify(log.report_json, null, 2);
-                          const blob = new Blob([fileData], {type: "text/plain"});
-                          const url = URL.createObjectURL(blob);
-                          const link = document.createElement('a');
-                          link.download = `audit_${log.application_id}.json`;
-                          link.href = url;
-                          link.click();
-                        }}>JSON</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {audits.length === 0 && (
-                    <tr><td colSpan="5" className="px-5 py-4 text-center">No audit reports found.</td></tr>
-                  )}
-                </tbody>
-              </table>
+        {/* Regulatory Flags Section */}
+        <section className="flex flex-col gap-12">
+          <div className="flex items-center justify-between border-b border-white/5 pb-8">
+            <h2 className="text-[32px] font-medium lowercase">regulatory flags</h2>
+            <div className="flex items-center gap-2 border border-white/5 px-6 py-3 rounded-full text-white/20">
+              <Search size={14} />
+              <span className="text-[12px] lowercase tracking-tight">Filter records...</span>
             </div>
           </div>
-          
-          {/* Regulatory Flags */}
-          <div className="glass-card flex flex-col mt-4">
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <h2 style={{ fontFamily: 'Sora, sans-serif', fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Regulatory Flags</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <th className="px-5 py-3 font-medium">Type</th>
-                    <th className="px-5 py-3 font-medium">Severity</th>
-                    <th className="px-5 py-3 font-medium">App ID</th>
-                    <th className="px-5 py-3 font-medium">Description</th>
-                    <th className="px-5 py-3 font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {flags.map((flag, i) => {
-                    const sev = sevCfg[flag.severity] || sevCfg.clear;
-                    return (
-                    <tr key={flag.id || i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                      <td className="px-5 py-3" style={{ color: 'var(--text-primary)' }}>{flag.flag_type}</td>
-                      <td className="px-5 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1" style={{ color: sev.color, background: sev.bg }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: sev.dot }} />
-                          {sev.label}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3" style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{flag.application_id}</td>
-                      <td className="px-5 py-3">{flag.description}</td>
-                      <td className="px-5 py-3">{new Date(flag.created_at).toLocaleString()}</td>
-                    </tr>
-                    );
-                  })}
-                  {flags.length === 0 && (
-                    <tr><td colSpan="5" className="px-5 py-4 text-center">No regulatory flags found.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+
+          <div className="flex flex-col">
+            {flags.map((flag, i) => (
+              <motion.div 
+                key={flag.id} 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                className="group py-10 border-b border-white/5 last:border-0 flex items-start justify-between -mx-10 px-10 hover:bg-white/[0.01] transition-colors"
+              >
+                <div className="flex flex-col gap-4 max-w-2xl">
+                  <div className="flex items-center gap-4">
+                    <span className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 border rounded-full ${flag.severity === 'error' || flag.severity === 'high' ? 'border-red-500 text-red-500' : 'border-white/10 text-white/40'}`}>
+                      {flag.severity}
+                    </span>
+                    <span className="text-[12px] font-mono text-white/20">APPID-{flag.application_id.slice(0, 8)}</span>
+                  </div>
+                  <h4 className="text-[20px] font-medium lowercase">{flag.flag_type}</h4>
+                  <p className="text-[14px] text-white/40 leading-relaxed capitalize">{flag.description}</p>
+                </div>
+                <div className="flex flex-col gap-1 items-end">
+                   <span className="text-[12px] text-white/20 font-mono italic">{new Date(flag.created_at).toLocaleTimeString()}</span>
+                   <span className="text-[10px] text-violet-500/50 uppercase tracking-widest font-bold mt-2">Active Monitor</span>
+                </div>
+              </motion.div>
+            ))}
+            {flags.length === 0 && <p className="py-20 text-center text-white/20 lowercase italic">Repository at baseline. No active flags.</p>}
           </div>
-          
-        </div>
+        </section>
+
       </div>
     </div>
   );
