@@ -17,6 +17,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "framer-motion": "^12.38.0",
+    "jspdf": "^4.2.1",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.8.0",
     "pako": "^2.1.0",

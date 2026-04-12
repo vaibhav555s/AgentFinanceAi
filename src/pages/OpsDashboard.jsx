@@ -46,12 +46,25 @@ function useOpsData() {
   useEffect(() => {
     const fetchAll = async () => {
       const [{data: sData}, {data: eData}, {data: fData}, mData] = await Promise.all([
-        supabase.from('loan_applications').select('*, profiles(name, phone)').order('updated_at', { ascending: false }),
+        supabase.from('loan_applications').select('*').order('updated_at', { ascending: false }),
         supabase.from('application_events').select('*').order('created_at', { ascending: false }).limit(200),
         supabase.from('regulatory_flags').select('*').order('created_at', { ascending: false }),
         fetchPipelineMetrics()
       ]);
-      setSessions(sData || []);
+      
+      const sDataFinal = sData ? [...sData] : [];
+      if (sDataFinal.length > 0) {
+        const profileIds = [...new Set(sDataFinal.map(s => s.profile_id).filter(Boolean))];
+        if (profileIds.length > 0) {
+          const { data: pData } = await supabase.from('profiles').select('id, name, phone').in('id', profileIds);
+          if (pData) {
+            const pMap = pData.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+            sDataFinal.forEach(s => { s.profiles = pMap[s.profile_id]; });
+          }
+        }
+      }
+      
+      setSessions(sDataFinal);
       setEvents(eData || []);
       setFlags(fData || []);
       setMetrics(mData);

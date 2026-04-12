@@ -147,8 +147,8 @@ function extractName(text) {
 /* ─── Employment Detection ───────────────────────────── */
 
 const EMPLOYMENT_KEYWORDS = {
-  salaried: ['salaried', 'salary', 'job', 'employed', 'company', 'office', 'mra', 'working at', 'work at', 'work in'],
-  self_employed: ['self employed', 'self-employed', 'freelance', 'own business', 'shop owner', 'businessman', 'entrepreneur'],
+  salaried: ['salaried', 'salary', 'job', 'company', 'office', 'mra', 'working at', 'work at', 'work in'],
+  self_employed: ['self employed', 'self-employed', 'selfemployed', 'business', 'freelance', 'own business', 'shop owner', 'businessman', 'entrepreneur'],
   government: ['government', 'govt', 'sarkari', 'public sector', 'psu'],
   retired: ['retired', 'pension', 'ex-service'],
   student: ['student', 'studying', 'college'],
@@ -162,16 +162,21 @@ const EMPLOYMENT_KEYWORDS = {
  */
 function detectEmployment(text) {
   const lower = text.toLowerCase();
-  // Find the last mention by checking index of keywords
   let bestType = null;
   let lastIndex = -1;
+  let maxLen = 0;
 
   for (const [type, keywords] of Object.entries(EMPLOYMENT_KEYWORDS)) {
     for (const kw of keywords) {
-      const idx = lower.lastIndexOf(kw);
-      if (idx > lastIndex) {
-        lastIndex = idx;
-        bestType = type;
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      let m;
+      while ((m = regex.exec(lower)) !== null) {
+        // If we found a match later in the String, OR at the same location but a longer match (e.g. self employed vs employed)
+        if (m.index > lastIndex || (m.index === lastIndex && kw.length > maxLen)) {
+          lastIndex = m.index;
+          bestType = type;
+          maxLen = kw.length;
+        }
       }
     }
   }
