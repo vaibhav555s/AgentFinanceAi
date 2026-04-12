@@ -42,11 +42,13 @@ import {
   getApplicationId,
   setApplicationId,
   updateResumeCheckpoint,
-  logApplicationEvent
+  logApplicationEvent,
+  logRegulatoryFlag
 } from '../../services/dbService.js';
 import { captureSecurityMetadata } from '../../services/securityService.js';
 import { analyzeFraudRisk } from '../fraud/fraudEngine.js';
 import { analyzeSessionIntelligence } from '../ai/intelligenceAgent.js';
+import { generateAuditReport } from '../../utils/auditGenerator.js';
 
 let lastPhaseForTracking = null;
 
@@ -483,10 +485,20 @@ function _triggerFaceScan() {
     }
 
     const delta = aadhaarAge !== null && estimatedAge !== null ? Math.abs(estimatedAge - aadhaarAge) : null;
-    const isMatched = delta !== null ? delta <= 12 : true; // 12-year tolerance, or pass if no baseline
+    const isMatched = delta !== null ? delta <= 15 : true; // 15-year tolerance, or pass if no baseline
 
     // Spoofing check overrides match status
     const status = !isLivePerson ? 'spoof' : isMatched ? 'matched' : 'mismatch';
+
+    // Age tolerance warning for Ops review
+    if (delta !== null && delta > 5 && status === 'matched') {
+      logRegulatoryFlag(
+        state.metadata?.appId || getApplicationId(),
+        'age_tolerance_warning',
+        'medium',
+        `Vision age (${estimatedAge}) differs from Aadhaar age (${aadhaarAge}) by ${delta} years. Allowed under tolerance.`
+      );
+    }
 
     const faceAge = {
       status,
@@ -654,6 +666,10 @@ async function _triggerBureau() {
       state = { ...state, bureau: bureauState, policy: policyResult, phase: PHASES.BUREAU };
       log('ORCHESTRATOR', 'WARN', '→ BUREAU FAIL — application rejected', policyResult);
       completeApplication('rejected');
+      // Auto-generate immutable audit record (fire-and-forget)
+      generateAuditReport(getApplicationId(), 'SYSTEM:AUTO_REJECTED').catch(e =>
+        log('ORCHESTRATOR', 'WARN', 'Audit generation failed (rejected)', e.message)
+      );
       _speakError('Unfortunately, based on our credit assessment, we are unable to extend a loan offer at this time. Thank you for your time.');
     }
     notify();
@@ -710,6 +726,10 @@ export function triggerConsent(phrase) {
   setTimeout(() => {
     state = { ...state, phase: PHASES.COMPLETE };
     log('ORCHESTRATOR', 'INFO', '→ COMPLETE');
+    // Auto-generate immutable audit record (fire-and-forget)
+    generateAuditReport(getApplicationId(), 'SYSTEM:AUTO_COMPLETE').catch(e =>
+      log('ORCHESTRATOR', 'WARN', 'Audit generation failed (complete)', e.message)
+    );
     notify();
   }, 2000);
 }
