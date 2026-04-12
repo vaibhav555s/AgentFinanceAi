@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion';
 import {
@@ -349,6 +349,27 @@ function FaceScanOverlay({ overlay }) {
 
 /* ─── AI Live Caption Overlay ────────────────────────── */
 function LiveCaptionOverlay({ text }) {
+  const [visibleCount, setVisibleCount] = useState(0);
+  const words = useMemo(() => (text ? text.split(/\s+/) : []), [text]);
+
+  useEffect(() => {
+    setVisibleCount(0);
+    if (!text || words.length === 0) return;
+
+    // Fast reveal: ~5-6 words per second
+    const interval = setInterval(() => {
+      setVisibleCount((prev) => {
+        if (prev >= words.length) {
+          clearInterval(interval);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [text, words.length]);
+
   if (!text) return null;
 
   return (
@@ -357,12 +378,21 @@ function LiveCaptionOverlay({ text }) {
         initial={{ opacity: 0, y: 10, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 5, scale: 0.95 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="px-6 py-3 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 shadow-2xl"
+        className="px-6 py-3 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 shadow-2xl flex flex-wrap justify-center gap-x-1"
       >
-        <p className="text-[18px] md:text-[22px] font-medium text-white text-center leading-relaxed tracking-tight">
-          {text}
-        </p>
+        <AnimatePresence>
+          {words.slice(0, visibleCount).map((word, i) => (
+            <motion.span
+              key={`${text}-${i}`}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="text-[18px] md:text-[22px] font-medium text-white tracking-tight"
+            >
+              {word}
+            </motion.span>
+          ))}
+        </AnimatePresence>
       </motion.div>
     </div>
   );
