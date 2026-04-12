@@ -20,14 +20,25 @@ const generateHash = async (message) => {
  */
 export const generateAuditReport = async (applicationId, generatedBy = 'SYSTEM') => {
   try {
-    // 1. Fetch Session Data
+    // 1. Fetch Session Data (no join — avoids FK schema cache requirement)
     const { data: loanApp, error: appError } = await supabase
       .from('loan_applications')
-      .select('*, profiles(name, phone)')
+      .select('*')
       .eq('id', applicationId)
       .single();
     
     if (appError) throw appError;
+
+    // 1b. Fetch profile separately using user_id
+    let profileData = null;
+    if (loanApp.user_id) {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('name, phone')
+        .eq('id', loanApp.user_id)
+        .single();
+      profileData = prof;
+    }
 
     // 2. Fetch KYC Data
     const { data: kycData } = await supabase
@@ -43,14 +54,31 @@ export const generateAuditReport = async (applicationId, generatedBy = 'SYSTEM')
       .eq('application_id', applicationId)
       .order('created_at', { ascending: true });
 
-    // 4. Fetch Consent Records
-    const { data: consents } = await supabase
-      .from('consent_records')
+    // 4. Fetch Consent Records (uses session_id)
+    let consents = [];
+    if (loanApp.session_id) {
+      const { data: consentData } = await supabase
+        .from('consent_records')
+        .select('*')
+        .eq('session_id', loanApp.session_id)
+        .order('captured_at', { ascending: true });
+      consents = consentData || [];
+    }
+
+    // 4b. Fetch Bureau Report
+    const { data: bureauReport } = await supabase
+      .from('bureau_reports')
       .select('*')
       .eq('application_id', applicationId)
-      .order('created_at', { ascending: true });
+      .single();
+
+    // 4c. Fetch Regulatory Flags
+    const { data: regulatoryFlags } = await supabase
+      .from('regulatory_flags')
+      .select('*')
+      .eq('application_id', applicationId);
       
-    // 5. Build JSON Payload
+    // 5. Build JSON Payload mapped precisely for CompliancePage.jsx
     const reportJson = {
       audit_meta: {
         generated_at: new Date().toISOString(),
@@ -61,10 +89,11 @@ export const generateAuditReport = async (applicationId, generatedBy = 'SYSTEM')
           platform: navigator.platform
         }
       },
-      application_state: {
+      applicant: {
         id: loanApp.id,
-        user: loanApp.profiles?.name || 'Unknown',
-        phone: loanApp.profiles?.phone || 'Unknown',
+        name: profileData?.name || loanApp.applicant_name || 'Unknown',
+        phone: profileData?.phone || 'Unknown',
+        bureau_score: bureauReport?.credit_score || 'N/A',
         stage: loanApp.application_stage,
         status: loanApp.status,
         created_at: loanApp.created_at,
@@ -73,19 +102,30 @@ export const generateAuditReport = async (applicationId, generatedBy = 'SYSTEM')
       risk_assessment: {
         fraud_score: loanApp.fraud_risk_score,
         trust_score: loanApp.trust_score,
-        risk_score: loanApp.risk_score
+        risk_score: loanApp.risk_score,
+        flags: regulatoryFlags ? regulatoryFlags.map(f => ({
+          severity: f.severity,
+          flag_type: f.flag_type,
+          description: f.description
+        })) : []
       },
       kyc_validation: kycData ? {
-        document_type: kycData.document_type,
-        verified: kycData.is_verified,
-        face_match_score: kycData.face_match_score,
-        verification_method: 'AgentFinance AI Engine'
+        document_type: 'aadhaar', // implicitly default currently
+        verified: kycData.biometric_match_status === 'matched',
+        face_match_score: kycData.liveness_score ? (kycData.liveness_score * 100).toFixed(0) : 'N/A',
+        verification_method: 'AgentFinance AI Engine',
+        document_url: kycData.aadhaar_image_url,
+        face_url: kycData.face_capture_url
       } : null,
-      consents: consents || [],
-      events: events.map(e => ({
-        timestamp: e.created_at,
+      consent_audit: consents.map(c => ({
+        created_at: c.captured_at,
+        user_ip: 'N/A', // user_ip not captured in DB yet
+        consent_text: c.consent_phrase
+      })),
+      event_trail: (events || []).map(e => ({
+        created_at: e.created_at,
         event: e.event,
-        metadata: e.metadata
+        metadata: e.metadata || {}
       }))
     };
 
@@ -110,21 +150,20 @@ export const generateAuditReport = async (applicationId, generatedBy = 'SYSTEM')
 
 ## 1. Applicant Profile
 - **Application ID:** ${loanApp.id}
-- **Name:** ${loanApp.profiles?.name || 'N/A'}
-- **Phone:** ${loanApp.profiles?.phone || 'N/A'}
+- **Name:** ${reportJson.applicant.name}
+- **Phone:** ${reportJson.applicant.phone}
+- **Bureau Score:** ${reportJson.applicant.bureau_score}
 - **Status:** ${loanApp.status} (${loanApp.application_stage})
 
 ## 2. Risk & KYC Data
 - **Fraud Score:** ${loanApp.fraud_risk_score || 'N/A'}
-- **Trust Score:** ${loanApp.trust_score || 'N/A'}
-- **Risk Score:** ${loanApp.risk_score || 'N/A'}
-- **KYC Verified:** ${kycData?.is_verified ? 'Yes' : 'No'}
+- **KYC Verified:** ${reportJson.kyc_validation?.verified ? 'Yes' : 'No'}
 
 ## 3. Explicit Consents
-${consents && consents.length > 0 ? consents.map(c => `- **${new Date(c.timestamp).toLocaleString()}**: ${c.consent_text} (IP: ${c.user_ip})`).join('\n') : 'No consents recorded.'}
+${reportJson.consent_audit.length > 0 ? reportJson.consent_audit.map(c => `- **${new Date(c.created_at).toLocaleString()}**: ${c.consent_text}`).join('\n') : 'No consents recorded.'}
 
 ## 4. Event Trail
-${events.map(e => `- \`[${new Date(e.created_at).toISOString()}]\` - **${e.event}** \n  *Meta:* ${JSON.stringify(e.metadata)}`).join('\n')}
+${reportJson.event_trail.map(e => `- \`[${new Date(e.created_at).toISOString()}]\` - **${e.event}** \n  *Meta:* ${JSON.stringify(e.metadata)}`).join('\n')}
 
 ---
 *End of Report*

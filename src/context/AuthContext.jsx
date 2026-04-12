@@ -14,6 +14,8 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchedUserIdRef = React.useRef(null);
+
   useEffect(() => {
     // 1. Fetch initial session
     const initializeAuth = async () => {
@@ -39,6 +41,7 @@ export const AuthProvider = ({ children }) => {
         await fetchProfile(session.user.id);
       } else {
         setProfile(null);
+        fetchedUserIdRef.current = null;
       }
       console.log(`[AuthContext] onAuthStateChange ${event} setting loading to false`);
       setLoading(false);
@@ -50,7 +53,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const fetchProfile = async (userId) => {
+    if (fetchedUserIdRef.current === userId) return;
+    
     try {
+      fetchedUserIdRef.current = userId;
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase query timed out after 5s')), 5000));
       const queryPromise = supabase
         .from('profiles')
