@@ -89,7 +89,7 @@ export async function synthesizeAndPlay(text, options = {}) {
             return new Promise((resolve, reject) => {
                 currentAudio.onplay = () => {
                     isPlaying = true;
-                    window.dispatchEvent(new CustomEvent('ai_speaking_start'));
+                    window.dispatchEvent(new CustomEvent('ai_speaking_start', { detail: { text } }));
                 };
                 currentAudio.onended = () => {
                     isPlaying = false;

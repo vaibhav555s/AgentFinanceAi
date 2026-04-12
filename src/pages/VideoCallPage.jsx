@@ -102,7 +102,7 @@ function phaseToStep(phase) {
 }
 
 /* ─── Typewriter ────────────────────────────────────── */
-function Typewriter({ phase }) {
+function Typewriter({ phase, overrideText }) {
   const captions = {
     [PHASES.CHAT]: ['Listening to your response...', 'Extracting financial data...', 'Analyzing your profile...'],
     [PHASES.AADHAAR_UPLOAD]: ['Waiting for Aadhaar upload...', 'Document verification ready...'],
@@ -120,20 +120,36 @@ function Typewriter({ phase }) {
   const [text, setText] = useState('');
   const [charIdx, setCharIdx] = useState(0);
   const [done, setDone] = useState(false);
-  const phrase = list[idx % list.length];
+  
+  const currentPhrase = overrideText || list[idx % list.length];
 
-  useEffect(() => { setIdx(0); setText(''); setCharIdx(0); setDone(false); }, [phase]);
+  useEffect(() => { 
+    setIdx(0); 
+    setText(''); 
+    setCharIdx(0); 
+    setDone(false); 
+  }, [phase, overrideText]);
 
   useEffect(() => {
-    if (done) {
-      const t = setTimeout(() => { setIdx(i => i + 1); setText(''); setCharIdx(0); setDone(false); }, 3000);
+    if (done && !overrideText) {
+      const t = setTimeout(() => { 
+        setIdx(i => i + 1); 
+        setText(''); 
+        setCharIdx(0); 
+        setDone(false); 
+      }, 3000);
       return () => clearTimeout(t);
     }
-    if (charIdx < phrase.length) {
-      const t = setTimeout(() => { setText(phrase.slice(0, charIdx + 1)); setCharIdx(c => c + 1); }, 38);
+    if (charIdx < currentPhrase.length) {
+      const t = setTimeout(() => { 
+        setText(currentPhrase.slice(0, charIdx + 1)); 
+        setCharIdx(c => c + 1); 
+      }, 25);
       return () => clearTimeout(t);
-    } else { setDone(true); }
-  }, [charIdx, phrase, done]);
+    } else { 
+      setDone(true); 
+    }
+  }, [charIdx, currentPhrase, done, overrideText]);
 
   return (
     <div className="flex items-center gap-3">
@@ -141,9 +157,14 @@ function Typewriter({ phase }) {
         {[1, 0.6, 0.8].map((op, i) => (
           <motion.div
             key={i}
-            animate={{ height: ['4px', '12px', '4px'] }}
+            animate={{ height: overrideText ? ['8px', '20px', '8px'] : ['4px', '12px', '4px'] }}
             transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-            style={{ width: 1.5, background: C.purple, opacity: op, borderRadius: 1 }}
+            style={{ 
+              width: 1.5, 
+              background: overrideText ? '#fff' : C.purple, 
+              opacity: op, 
+              borderRadius: 1 
+            }}
           />
         ))}
       </div>
@@ -326,17 +347,53 @@ function FaceScanOverlay({ overlay }) {
   );
 }
 
+/* ─── AI Live Caption Overlay ────────────────────────── */
+function LiveCaptionOverlay({ text }) {
+  if (!text) return null;
+
+  return (
+    <div className="absolute inset-0 flex items-end justify-center pb-24 px-6 pointer-events-none z-[30]">
+      <motion.div
+        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 5, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+        className="px-6 py-3 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 shadow-2xl"
+      >
+        <p className="text-[18px] md:text-[22px] font-medium text-white text-center leading-relaxed tracking-tight">
+          {text}
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ─── Left Panel ────────────────────────────────────── */
 function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRecording, stopRecording, phase, leftOverlay, onJoined }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [aiCaption, setAiCaption] = useState('');
 
   useEffect(() => {
-    const onStart = () => setIsAiSpeaking(true);
-    const onEnd = () => setIsAiSpeaking(false);
+    const onStart = (e) => {
+      setIsAiSpeaking(true);
+      if (e.detail?.text) setAiCaption(e.detail.text);
+    };
+    const onEnd = () => {
+      setIsAiSpeaking(false);
+      setAiCaption('');
+    };
+
     window.addEventListener('ai_speaking_start', onStart);
     window.addEventListener('ai_speaking_end', onEnd);
-    return () => { window.removeEventListener('ai_speaking_start', onStart); window.removeEventListener('ai_speaking_end', onEnd); };
+    return () => { 
+      window.removeEventListener('ai_speaking_start', onStart); 
+      window.removeEventListener('ai_speaking_end', onEnd); 
+    };
   }, []);
+
+  useEffect(() => {
+    setAiCaption('');
+  }, [phase]);
 
   return (
     <div className="relative flex flex-col" style={{ flex: '0 0 65%', background: C.bg, overflow: 'hidden' }}>
@@ -349,6 +406,11 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRe
       <div style={{ position: 'absolute', inset: 0, zIndex: 15, pointerEvents: leftOverlay ? 'auto' : 'none' }}>
         <FaceScanOverlay overlay={leftOverlay} />
       </div>
+
+      {/* AI Live Caption Overlay (CC) */}
+      <AnimatePresence>
+        <LiveCaptionOverlay text={aiCaption} />
+      </AnimatePresence>
 
       {/* Center AI avatar + controls */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6 px-4" style={{ position: 'relative', zIndex: 5 }}>
