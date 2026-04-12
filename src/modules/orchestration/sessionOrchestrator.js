@@ -580,9 +580,10 @@ async function _triggerBureau() {
 
     // ── Step 2: Get income and compute proposed EMI ──
     let income = 85000;
+    let aiState = null;
     try {
       const { getState } = await import('../state/stateManager.js');
-      const aiState = getState();
+      aiState = getState();
       income = aiState.extractedData?.income?.value || 85000;
     } catch { /* fallback to 85K */ }
 
@@ -621,11 +622,15 @@ async function _triggerBureau() {
         income,
         creditScore: bureauResponse.creditScore,
         fraudScore: 0,
+        requestedAmount: aiState?.extractedData?.loanAmount?.value || null,
+        purpose: aiState?.extractedData?.purpose?.value || null,
+        employment: aiState?.extractedData?.employment?.value || null,
+        age: state.aadhaar?.age || null,
       });
 
       const initialOffer = {
-        amount: policyLimits.maxAmount,
-        tenure: 36,
+        amount: policyLimits.initialAmount || policyLimits.maxAmount,
+        tenure: policyLimits.alternatives?.[0]?.tenure || 36,
         interestRate: policyLimits.interestRate,
       };
 

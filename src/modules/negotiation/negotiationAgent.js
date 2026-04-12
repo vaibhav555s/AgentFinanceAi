@@ -42,75 +42,145 @@ function getInterestRate(creditScore) {
  * @param {{ income: number, creditScore: number, fraudScore?: number, requestedAmount?: number }} params
  * @returns {{ maxAmount, minAmount, initialAmount, interestRate, maxEMI, policyNote }}
  */
-export function calculatePolicyOffer({ income, creditScore, fraudScore = 0, requestedAmount = null }) {
+export function calculatePolicyOffer({ income, creditScore, fraudScore = 0, requestedAmount = null, purpose = null, employment = null, age = null }) {
   const FOIR = 0.45; // 45% of monthly income can go to EMI (RBI guideline)
-  const interestRate = getInterestRate(creditScore);
+
+  // Purpose-aware interest rate adjustments
+  let baseRate = getInterestRate(creditScore);
+  let purposeTitlePrefix = 'Standard';
+  let alt2Title = 'Max Liquidity';
+  let alt3Title = 'Light EMI';
+  
+  if (purpose) {
+    const p = purpose.toLowerCase();
+    if (p.includes('education')) {
+      baseRate -= 0.5;
+      purposeTitlePrefix = 'Education';
+      alt2Title = 'Full Course Fee';
+      alt3Title = 'Semester Saver';
+    } else if (p.includes('home') || p.includes('housing')) {
+      baseRate -= 1.0;
+      purposeTitlePrefix = 'Home';
+      alt2Title = 'Dream Home';
+      alt3Title = 'Low EMI Home';
+    } else if (p.includes('business')) {
+      baseRate += 0.5;
+      purposeTitlePrefix = 'Growth';
+      alt2Title = 'Max Capital';
+      alt3Title = 'Cash Flow Saver';
+    }
+  }
+
+  // Employment-aware risk tuning
+  let employmentMaxTenure = 84;
+  if (employment && employment.toLowerCase().includes('self')) {
+    baseRate += 0.25;
+    employmentMaxTenure = 60;
+  }
+
+  const interestRate = Math.max(7.0, baseRate); // floor at 7%
   const maxMonthlyEMI = income * FOIR;
 
-  // Back-calculate max loan principal for 36 month standard tenure
+  // Age-aware tenure capping
+  let ageMaxTenure = 84;
+  if (age) {
+    if (age < 25) ageMaxTenure = 60;
+    else if (age > 55) ageMaxTenure = 48;
+  }
+
+  const absoluteMaxTenure = Math.min(employmentMaxTenure, ageMaxTenure);
+
+  // Purpose-aware loan ceiling (higher for secured / priority-sector categories)
+  let loanCeiling = 500000; // ₹5L default for personal
+  if (purpose) {
+    const p = purpose.toLowerCase();
+    if (p.includes('education'))                       loanCeiling = 2000000; // ₹20L
+    else if (p.includes('home') || p.includes('housing')) loanCeiling = 2000000; // ₹20L
+    else if (p.includes('business'))                   loanCeiling = 1000000; // ₹10L
+  }
+
+  // Back-calculate max loan principal using the LONGEST available tenure (maximises eligibility)
   const r = interestRate / 12 / 100;
-  const n = 36;
-  const rawMaxLoan = maxMonthlyEMI * (Math.pow(1 + r, n) - 1) / (r * Math.pow(1 + r, n));
+  const calcTenure = absoluteMaxTenure; // use full tenure for eligibility calc
+  const rawMaxLoan = r > 0
+    ? maxMonthlyEMI * (Math.pow(1 + r, calcTenure) - 1) / (r * Math.pow(1 + r, calcTenure))
+    : maxMonthlyEMI * calcTenure;
 
   // Fraud risk penalty
   const fraudMultiplier = fraudScore > 70 ? 0.5 : fraudScore > 40 ? 0.75 : 1.0;
 
-  // Round down to nearest ₹10,000 and cap at ₹5L
+  // Round down to nearest ₹10,000 and apply purpose-aware ceiling
   const maxAmount = Math.min(
     Math.floor((rawMaxLoan * fraudMultiplier) / 10000) * 10000,
-    500000
+    loanCeiling
   );
 
-  // Option 1: Standard (Balanced)
-  const stdAmount = Math.floor((maxAmount * 0.8) / 10000) * 10000;
+  // ─── Anchor all 3 options around the user's requested amount ───
+  // If user asked for a specific amount, all variants orbit around it.
+  // If no request, fall back to maxAmount-based logic.
+  const anchorAmount = (requestedAmount && requestedAmount >= 50000)
+    ? Math.min(Math.floor(requestedAmount / 10000) * 10000, maxAmount)
+    : Math.floor((maxAmount * 0.8) / 10000) * 10000;
 
-  // Option 2: Max Liquidity (Highest Amount permitted, longer tenure to keep EMI reasonable)
-  const maxLiqTenure = 48; // Extend a bit if possible to keep EMI under FOIR
-  const maxLiqAmount = maxAmount;
+  const stdTenure = Math.min(36, absoluteMaxTenure);
 
-  // Option 3: Light EMI (Lower amount, longer tenure for tiny EMI)
-  const lightEmiAmount = Math.max(50000, Math.floor((maxAmount * 0.5) / 10000) * 10000);
-  const lightEmiTenure = 60;
+  // Option 1: Recommended — requested amount, standard tenure
+  const opt1Amount = anchorAmount;
+  const opt1Tenure = stdTenure;
+
+  // Option 2: Flexibility — same amount, longer tenure → lower EMI
+  const opt2Tenure = Math.min(opt1Tenure + 24, absoluteMaxTenure); // +24 months or capped
+  const opt2Amount = anchorAmount; // same amount, just stretched over more months
+
+  // Option 3: Budget — reduced amount (~70%), longest tenure → lowest EMI
+  const opt3Amount = Math.max(50000, Math.floor((anchorAmount * 0.7) / 10000) * 10000);
+  const opt3Tenure = absoluteMaxTenure;
 
   const alternatives = [
     {
       id: 'opt1',
-      title: 'Standard Plan',
+      title: `${purposeTitlePrefix} Plan`,
       icon: 'star',
-      amount: stdAmount,
-      tenure: 36,
+      amount: opt1Amount,
+      tenure: opt1Tenure,
       interestRate
     },
     {
       id: 'opt2',
-      title: 'Max Liquidity',
+      title: alt2Title,
       icon: 'zap',
-      amount: maxLiqAmount,
-      tenure: maxLiqTenure,
+      amount: opt2Amount,
+      tenure: opt2Tenure,
       interestRate
     },
     {
       id: 'opt3',
-      title: 'Light EMI',
+      title: alt3Title,
       icon: 'shield',
-      amount: lightEmiAmount,
-      tenure: lightEmiTenure,
+      amount: opt3Amount,
+      tenure: opt3Tenure,
       interestRate
     }
   ];
 
-  const policyNote = fraudMultiplier < 1
-    ? `Adjusted for elevated risk profile (fraud score: ${fraudScore})`
-    : `FOIR cap at 45% of stated income ₹${income.toLocaleString('en-IN')}/mo`;
+  let policyNote;
+  if (fraudMultiplier < 1) {
+    policyNote = `Adjusted for elevated risk profile (fraud score: ${fraudScore})`;
+  } else if (requestedAmount && requestedAmount > maxAmount) {
+    policyNote = `Requested ₹${requestedAmount.toLocaleString('en-IN')} exceeds FOIR-eligible max of ₹${maxAmount.toLocaleString('en-IN')} — capped at policy limit`;
+  } else {
+    policyNote = `FOIR cap at 45% of stated income ₹${income.toLocaleString('en-IN')}/mo`;
+  }
 
   log('NEGOTIATION', 'INFO', '📋 Policy offer calculated', {
-    income, creditScore, fraudScore,
+    income, creditScore, fraudScore, requestedAmount, purpose, employment, age,
     maxAmount, interestRate,
   });
 
   return {
     maxAmount,
     minAmount: 50000,
+    initialAmount: anchorAmount,
     interestRate,
     maxEMI: Math.round(maxMonthlyEMI),
     policyNote,
@@ -258,5 +328,10 @@ REQUIRED: End your response with EXACTLY ONE action tag (no spaces inside):
  * Called once when OFFER phase starts.
  */
 export function buildOpeningOfferScript(offer, policyLimits) {
-  return `I have generated three personalised loan options based on your profile, which you can see on the screen. Do you want to select one of these, or would you like to negotiate the amount or tenure?`;
+  const purposeName = policyLimits.alternatives?.[0]?.title.replace(' Plan', '').toLowerCase() || 'standard';
+  const rate = offer.interestRate;
+  const amt = offer.amount.toLocaleString('en-IN');
+  const purposeContext = purposeName === 'standard' ? 'personalised loan' : `${purposeName} loan`;
+  
+  return `I have generated three ${purposeContext} options tailored for your profile. The recommended plan is for ₹${amt} at ${rate}% interest for ${offer.tenure} months. You can see all options on the screen. Would you like to select one, or negotiate the terms?`;
 }

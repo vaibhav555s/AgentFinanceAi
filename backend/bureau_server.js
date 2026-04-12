@@ -45,6 +45,25 @@ app.post("/api/bureau", (req, res) => {
   const latency = 200 + Math.floor(Math.random() * 600);
 
   setTimeout(() => {
+    // HARDCODED SUCCESS FOR TESTING
+    const data = {
+      creditScore: 820 + Math.floor(Math.random() * 30), // Always high (820-850)
+      activeLoans: 0,
+      dpdHistory: [
+        { month: "Jan", days: 0 }, { month: "Feb", days: 0 }, { month: "Mar", days: 0 },
+        { month: "Apr", days: 0 }, { month: "May", days: 0 }, { month: "Jun", days: 0 },
+        { month: "Jul", days: 0 }, { month: "Aug", days: 0 }, { month: "Sep", days: 0 },
+        { month: "Oct", days: 0 }, { month: "Nov", days: 0 }, { month: "Dec", days: 0 }
+      ],
+      writtenOffAccounts: 0,
+      creditUtilization: 5,
+      enquiriesLast6Months: 0,
+      oldestAccountAge: 10,
+      timestamp: new Date().toISOString(),
+      requestRef: aadhaarRef || "N/A",
+    };
+
+    /* Original Random Logic (Commented for testing)
     const data = {
       creditScore: randomScore(),
       activeLoans: randomLoans(),
@@ -56,8 +75,9 @@ app.post("/api/bureau", (req, res) => {
       timestamp: new Date().toISOString(),
       requestRef: aadhaarRef || "N/A",
     };
+    */
 
-    console.log(`[BUREAU] → Score: ${data.creditScore}, Active: ${data.activeLoans}, Written-off: ${data.writtenOffAccounts}`);
+    console.log(`[BUREAU] → SUCCESS (Score: ${data.creditScore}, Active: ${data.activeLoans}, Written-off: ${data.writtenOffAccounts})`);
     res.json(data);
   }, latency);
 });
