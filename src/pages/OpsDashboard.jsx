@@ -157,12 +157,18 @@ function StatCard({ label, value, trend, trendColor = 'text-white' }) {
 
 /* ─── Overview section ───────────────────────────────── */
 function OverviewSection({ data }) {
-  const { sessions, events, flags } = data;
+  const { sessions, events, flags, metrics } = data;
   const transcriptEndRef = useRef(null);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [events]);
+
+  const avgSecs = metrics?.avg_duration_sec || 0;
+  const avgFormatted = avgSecs > 0 ? `${Math.floor(avgSecs/60)}:${String(avgSecs%60).padStart(2,'0')}` : '—';
+  const liveCount = sessions.filter(s => s.status === 'live').length;
+  const highRiskCount = flags.filter(f => f.severity === 'high').length;
+  const completedCount = metrics?.completed || 0;
 
   return (
     <div className="flex flex-col gap-24">
@@ -173,24 +179,24 @@ function OverviewSection({ data }) {
       >
         <StatCard 
           label="Active Sessions" 
-          value={sessions.filter(s => s.status === 'live').length} 
-          trend={`${sessions.filter(s => s.status === 'live').length} live now`} 
+          value={liveCount} 
+          trend={`${liveCount} live now`} 
         />
         <StatCard 
           label="Fraud Flags" 
-          value={flags.filter(f => f.severity === 'high').length} 
-          trend={flags.filter(f => f.severity === 'high').length === 0 ? 'All clear' : 'Action needed'} 
-          trendColor="text-violet-500"
+          value={highRiskCount} 
+          trend={highRiskCount === 0 ? 'all clear' : 'action required'} 
+          trendColor={highRiskCount > 0 ? 'text-red-500' : 'text-violet-500'}
         />
         <StatCard 
           label="Avg Session Time" 
-          value="4:32" 
-          trend="12% faster than avg" 
+          value={avgFormatted} 
+          trend="real-time average" 
         />
         <StatCard 
           label="Offers Accepted" 
-          value={sessions.filter(s => s.application_stage === 'completed').length} 
-          trend="Today" 
+          value={completedCount} 
+          trend="total conversions" 
           trendColor="text-violet-500"
         />
       </motion.div>
@@ -261,7 +267,7 @@ function OverviewSection({ data }) {
               </div>
               <div className="flex flex-col">
                  <span className="text-[9px] text-white/30 uppercase tracking-widest font-bold mb-2">ELAPSED</span>
-                 <SessionTimer />
+                 <SessionTimer startTime={sessions[0]?.created_at} />
               </div>
             </div>
           </div>
@@ -292,14 +298,16 @@ function OverviewSection({ data }) {
               <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-bold">REAL-TIME ANALYTICS</span>
               <div className="flex flex-col gap-4">
                 {[
-                  { check: 'Liveness Detect', status: 'pass' },
-                  { check: 'Document Auth', status: 'pass' },
-                  { check: 'Face Match', status: 'pass' },
+                  { check: 'Liveness Detect', status: flags.some(f => f.application_id === sessions[0]?.id && f.flag_type === 'liveness_failure') ? 'fail' : 'pass' },
+                  { check: 'Document Auth', status: flags.some(f => f.application_id === sessions[0]?.id && f.flag_type === 'document_tampering') ? 'fail' : 'pass' },
+                  { check: 'Face Match', status: flags.some(f => f.application_id === sessions[0]?.id && f.flag_type === 'identity_mismatch') ? 'fail' : 'pass' },
                   { check: 'AML Screening', status: 'pass' },
                 ].map(item => (
                   <div key={item.check} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
                     <span className="text-[12px] text-white/50 lowercase">{item.check}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-violet-500">Verified</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-widest ${item.status === 'pass' ? 'text-violet-500' : 'text-red-500'}`}>
+                      {item.status === 'pass' ? 'Verified' : 'Flagged'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -448,7 +456,7 @@ function FraudSignalsSection({ data }) {
 
 /* ─── Transcripts section ────────────────────────────── */
 function TranscriptsSection({ data }) {
-  const { sessions } = data;
+  const { sessions, events } = data;
 
   return (
     <div className="flex flex-col gap-12">
@@ -461,62 +469,75 @@ function TranscriptsSection({ data }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {sessions.map((s, i) => (
-          <motion.div
-            key={s.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="flex flex-col gap-6 p-10 border border-white/5 hover:border-white/20 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">TKN-{s.id.slice(0, 8)}</span>
-                <span className="text-[24px] font-medium text-white lowercase leading-tight">{s.profiles?.name || 'anonymous'}</span>
-              </div>
-              <button className="p-4 rounded-full border border-white/5 text-white/30 hover:bg-white hover:text-black hover:border-white transition-all">
-                <Eye size={18} />
-              </button>
-            </div>
+        {sessions.map((s, i) => {
+          const lastEvent = events.find(e => e.application_id === s.id && e.role === 'ai');
+          const lastText = lastEvent?.metadata?.text || 'No recent activity recorded.';
 
-            <div className="flex items-center gap-8 py-4 border-y border-white/5">
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Date</span>
-                <span className="text-[12px] text-white/60 lowercase tracking-tight">{new Date(s.created_at).toLocaleDateString()}</span>
+          return (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="flex flex-col gap-6 p-10 border border-white/5 hover:border-white/20 transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">TKN-{s.id.slice(0, 8)}</span>
+                  <span className="text-[24px] font-medium text-white lowercase leading-tight">{s.profiles?.name || 'anonymous'}</span>
+                </div>
+                <button className="p-4 rounded-full border border-white/5 text-white/30 hover:bg-white hover:text-black hover:border-white transition-all">
+                  <Eye size={18} />
+                </button>
               </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Status</span>
-                <span className="text-[12px] text-violet-500 lowercase font-bold">{s.status}</span>
+
+              <div className="flex items-center gap-8 py-4 border-y border-white/5">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Date</span>
+                  <span className="text-[12px] text-white/60 lowercase tracking-tight">{new Date(s.created_at).toLocaleDateString()}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Status</span>
+                  <span className="text-[12px] text-violet-500 lowercase font-bold">{s.status}</span>
+                </div>
               </div>
-            </div>
 
-            <p className="text-[14px] text-white/30 leading-relaxed italic line-clamp-2 gap-2 flex flex-col">
-               <span className="text-violet-500 uppercase text-[9px] font-bold tracking-widest block not-italic">Recent Segment</span>
-               "Yes I understand the terms of this agreement and I'd like to proceed with the primary offer of 5,00,000 INR..."
-            </p>
+              <p className="text-[14px] text-white/30 leading-relaxed italic line-clamp-2 gap-2 flex flex-col">
+                <span className="text-violet-500 uppercase text-[9px] font-bold tracking-widest block not-italic">Recent Segment</span>
+                "{lastText}"
+              </p>
 
-            <div className="flex gap-4">
-               <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download PDF</button>
-               <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download Audio</button>
-            </div>
-          </motion.div>
-        ))}
+              <div className="flex gap-4">
+                <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download PDF</button>
+                <button className="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest border border-white/5 text-white/40 hover:bg-white/5 transition-all">Download Audio</button>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 /* ─── Session timer widget ───────────────────────────── */
-function SessionTimer() {
-  const [secs, setSecs] = useState(252); // 4m 12s
+function SessionTimer({ startTime }) {
+  const [secs, setSecs] = useState(0);
+
   useEffect(() => {
-    const t = setInterval(() => setSecs(s => s + 1), 1000);
+    const start = startTime ? new Date(startTime) : new Date();
+    const update = () => {
+      const diff = Math.floor((new Date() - start) / 1000);
+      setSecs(diff > 0 ? diff : 0);
+    };
+    update();
+    const t = setInterval(update, 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [startTime]);
+
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return (
-    <div style={{ fontFamily: 'Sora, sans-serif', fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+    <div style={{ fontSize: 20, fontWeight: 700, color: 'white', fontVariantNumeric: 'tabular-nums' }}>
       {m}:{String(s).padStart(2, '0')}
     </div>
   );

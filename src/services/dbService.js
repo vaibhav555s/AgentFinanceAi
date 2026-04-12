@@ -463,31 +463,56 @@ export const fetchPipelineMetrics = async () => {
   try {
     const { data, error } = await supabase
       .from('loan_applications')
-      .select('application_stage, status');
+      .select('application_stage, status, created_at, updated_at, metadata');
       
     if (error) throw error;
     
-    const dropoffData = {
+    const stats = {
       overall: data.length,
       kyc_started: 0,
       kyc_completed: 0,
       bureau_started: 0,
       bureau_completed: 0,
       offer_started: 0,
-      completed: 0
+      completed: 0,
+      avg_duration_sec: 0,
+      total_volume: 0
     };
 
+    let completedDurations = [];
+
     data.forEach(app => {
-      // Simplified mapping based on stages
-      if (['kyc', 'bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.kyc_started++;
-      if (['bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.kyc_completed++;
-      if (['bureau', 'offer', 'completed'].includes(app.application_stage)) dropoffData.bureau_started++;
-      if (['offer', 'completed'].includes(app.application_stage)) dropoffData.bureau_completed++;
-      if (['offer', 'completed'].includes(app.application_stage)) dropoffData.offer_started++;
-      if (app.application_stage === 'completed' || app.status === 'funded' || app.status === 'completed') dropoffData.completed++;
+      const stage = app.application_stage;
+      const isCompleted = stage === 'completed' || ['funded', 'completed', 'approved'].includes(app.status);
+
+      if (['kyc', 'bureau', 'offer', 'completed'].includes(stage)) stats.kyc_started++;
+      if (['bureau', 'offer', 'completed'].includes(stage)) stats.kyc_completed++;
+      if (['bureau', 'offer', 'completed'].includes(stage)) stats.bureau_started++;
+      if (['offer', 'completed'].includes(stage)) stats.bureau_completed++;
+      if (['offer', 'completed'].includes(stage)) stats.offer_started++;
+      
+      if (isCompleted) {
+        stats.completed++;
+        const start = new Date(app.created_at);
+        const end = new Date(app.updated_at);
+        const diff = Math.floor((end - start) / 1000);
+        if (diff > 0 && diff < 3600) { // Limit to 1 hour to avoid outliers/stale sessions
+           completedDurations.push(diff);
+        }
+
+        // Add to volume
+        if (app.metadata?.amount) {
+           const amt = parseInt(app.metadata.amount.toString().replace(/[^0-9]/g, ''));
+           if (!isNaN(amt)) stats.total_volume += amt;
+        }
+      }
     });
 
-    return dropoffData;
+    if (completedDurations.length > 0) {
+      stats.avg_duration_sec = Math.round(completedDurations.reduce((a,b) => a+b, 0) / completedDurations.length);
+    }
+
+    return stats;
   } catch (err) {
     log('DB', 'ERROR', `Failed to fetch pipeline metrics`, err);
     return null;
