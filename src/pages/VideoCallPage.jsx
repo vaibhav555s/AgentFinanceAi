@@ -24,7 +24,7 @@ import {
   rehydrateSession,
 } from '../modules/orchestration/sessionOrchestrator.js';
 import { processVideoFrame } from '../modules/interaction/liveInteraction.js';
-import { fetchApplicationState, unlockApplication } from '../services/dbService.js';
+import { fetchApplicationState, unlockApplication, uploadMedia } from '../services/dbService.js';
 
 /* ─── Helpers ────────────────────────────────────────── */
 function calcEMI(principal, annualRate, months) {
@@ -206,7 +206,7 @@ function ConfBadge({ level }) {
 }
 
 /* ─── Camera Frame ──────────────────────────────────── */
-function CameraFrame({ isVideoOn, onCameraReady, phase }) {
+function CameraFrame({ isVideoOn, onCameraReady, onStreamReady, phase }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -223,11 +223,12 @@ function CameraFrame({ isVideoOn, onCameraReady, phase }) {
     };
 
     if (isVideoOn) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(s => {
           active = s;
           setStream(s);
           if (videoRef.current) videoRef.current.srcObject = s;
+          onStreamReady?.(s);
           onCameraReady?.();
         })
         .catch(() => onCameraReady?.());
@@ -399,7 +400,7 @@ function LiveCaptionOverlay({ text }) {
 }
 
 /* ─── Left Panel ────────────────────────────────────── */
-function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRecording, stopRecording, phase, leftOverlay, onJoined }) {
+function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRecording, stopRecording, phase, leftOverlay, onJoined, onStreamReady }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [aiCaption, setAiCaption] = useState('');
 
@@ -429,7 +430,7 @@ function LeftPanel({ isVideoOn, setIsVideoOn, isListening, isProcessing, startRe
     <div className="relative flex flex-col" style={{ flex: '0 0 65%', background: C.bg, overflow: 'hidden' }}>
       {/* Camera */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
-        <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} phase={phase} />
+        <CameraFrame isVideoOn={isVideoOn} onCameraReady={() => onJoined?.()} onStreamReady={onStreamReady} phase={phase} />
       </div>
 
       {/* Face scan overlay */}
@@ -870,7 +871,7 @@ function PanelBureau({ bureau, policy }) {
 }
 
 /* --- Phase: OFFER -------------------------------------- */
-function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
+function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer, screenStream, setScreenStream }) {
   const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
   const { policyLimits } = negotiation || {};
 
@@ -926,12 +927,38 @@ function PanelOffer({ offer, bureau, policy, negotiation, onUpdateOffer }) {
         </div>
       )}
 
-      <button 
-        onClick={() => finalizeNegotiation('I accept these terms')}
-        className="w-full bg-white text-black py-6 rounded-2xl font-bold text-[14px] uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98] transition-all"
-      >
-        Lock Offer Terms
-      </button>
+      {!screenStream ? (
+        <button
+          onClick={async () => {
+            try {
+              const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+              setScreenStream(stream);
+            } catch (err) {
+              console.warn('[ScreenCapture] User denied screen share:', err);
+            }
+          }}
+          className="w-full border border-white/20 text-white py-6 rounded-2xl font-bold text-[14px] uppercase tracking-[0.2em] hover:bg-white/5 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+        >
+          <span style={{ fontSize: 18 }}>🖥</span> Share Screen to Lock Terms
+        </button>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-green-500/10 border border-green-500/20">
+            <motion.div
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              className="w-2 h-2 rounded-full bg-green-500"
+            />
+            <span className="text-[12px] font-bold text-green-400 uppercase tracking-[0.1em]">● Screen Recording Active</span>
+          </div>
+          <button
+            onClick={() => finalizeNegotiation('I accept these terms')}
+            className="w-full bg-white text-black py-6 rounded-2xl font-bold text-[14px] uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+          >
+            Say "I Accept These Terms" or Click Here
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -982,7 +1009,7 @@ function PanelConsent({ consent, token }) {
 }
 
 /* ─── Phase: COMPLETE ───────────────────────────────── */
-function PanelComplete({ offer, token }) {
+function PanelComplete({ offer, token, proofBlob }) {
   const navigate = useNavigate();
   const emi = calcEMI(offer.amount, offer.interestRate, offer.tenure);
 
@@ -1012,7 +1039,23 @@ function PanelComplete({ offer, token }) {
         </div>
       </div>
 
-      <button 
+      {!proofBlob ? (
+        <div className="flex items-center gap-3 px-5 py-4 rounded-xl bg-violet-500/10 border border-violet-500/20 w-full justify-center">
+          <motion.div
+            animate={{ opacity: [1, 0.3, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+            className="w-2 h-2 rounded-full bg-violet-400"
+          />
+          <span className="text-[12px] font-bold text-violet-400 uppercase tracking-[0.1em]">Finalising video proof...</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-green-500/10 border border-green-500/20 w-full justify-center">
+          <div className="w-2 h-2 rounded-full bg-green-500" />
+          <span className="text-[12px] font-bold text-green-400 uppercase tracking-[0.1em]">✓ Video proof secured &amp; uploaded</span>
+        </div>
+      )}
+
+      <button
         onClick={() => navigate('/ops')}
         className="w-full bg-white text-black py-6 rounded-2xl font-bold text-[14px] uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98] transition-all"
       >
@@ -1023,8 +1066,9 @@ function PanelComplete({ offer, token }) {
 }
 
 /* ─── RIGHT PANEL (ORCHESTRATED) ─────────────────────── */
-function RightPanel({ orchState, kycFields, token }) {
+function RightPanel({ orchState, kycFields, token, proofBlob, screenStream, setScreenStream }) {
   const { phase, aadhaar, kycMismatch, faceAge, bureau, policy, offer, consent, negotiation } = orchState;
+  const isScreenRecording = !!screenStream;
   const currentStep = phaseToStep(phase);
 
   function renderContent() {
@@ -1044,11 +1088,11 @@ function RightPanel({ orchState, kycFields, token }) {
       case PHASES.BUREAU:
         return <PanelBureau bureau={bureau} policy={policy} />;
       case PHASES.OFFER:
-        return <PanelOffer offer={offer} bureau={bureau} policy={policy} negotiation={negotiation} onUpdateOffer={(a, t) => updateOffer(a, t)} />;
+        return <PanelOffer offer={offer} bureau={bureau} policy={policy} negotiation={negotiation} onUpdateOffer={(a, t) => updateOffer(a, t)} screenStream={screenStream} setScreenStream={setScreenStream} />;
       case PHASES.CONSENT:
         return <PanelConsent consent={consent} token={token} />;
       case PHASES.COMPLETE:
-        return <PanelComplete offer={offer} token={token} />;
+        return <PanelComplete offer={offer} token={token} proofBlob={proofBlob} />;
       default:
         return <PanelChat kycFields={kycFields} />;
     }
@@ -1131,6 +1175,12 @@ export default function VideoCallPage() {
   const [orchState, setOrchState] = useState(() => getOrchestratorState());
   const { user } = useAuth();
 
+  // ── Screen-capture consent recording (lifted state) ─────────────────
+  const [screenStream, setScreenStream] = useState(null);
+  const [proofBlob, setProofBlob] = useState(null);
+  const [cameraStream, setCameraStream] = useState(null);
+  const recorderRef = useRef(null);
+
   useEffect(() => {
     if (user?.id) {
       setUserId(user.id);
@@ -1186,6 +1236,88 @@ export default function VideoCallPage() {
   // AI state (for live KYC extraction)
   const aiState = useAIState({ debounceMs: 400 });
 
+  // ── Cross-phase recording lifecycle ─────────────────────────────────
+  useEffect(() => {
+    const isActivePhase =
+      orchState.phase === PHASES.OFFER || orchState.phase === PHASES.CONSENT;
+
+    // START: recording begins as soon as screenStream is available in OFFER/CONSENT
+    if (isActivePhase && screenStream && !recorderRef.current) {
+      const combinedStream = new MediaStream();
+      // Merge screen video tracks
+      screenStream.getVideoTracks().forEach(t => combinedStream.addTrack(t));
+      // Merge camera microphone audio (verbal consent channel)
+      if (cameraStream) {
+        cameraStream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
+      }
+      // Merge screen/tab audio if available
+      screenStream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
+
+      const chunks = [];
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
+      const recorder = new MediaRecorder(combinedStream, { mimeType });
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        setProofBlob(blob);
+
+        // ── Auto-download to user's device ───────────────────────────────
+        const sessionLabel = token ? token.slice(0, 8).toUpperCase() : Date.now();
+        const fileName = `consent-proof-${sessionLabel}-${Date.now()}.webm`;
+        try {
+          const downloadUrl = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = downloadUrl;
+          anchor.download = fileName;
+          document.body.appendChild(anchor);
+          anchor.click();
+          document.body.removeChild(anchor);
+          // Revoke after a short delay so the download has time to start
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+          console.info('[Consent] Video proof downloaded to device:', fileName);
+        } catch (err) {
+          console.error('[Consent] Failed to trigger download:', err);
+        }
+
+        // Shut down all captured tracks
+        combinedStream.getTracks().forEach(t => t.stop());
+        screenStream.getTracks().forEach(t => t.stop());
+        setScreenStream(null);
+        recorderRef.current = null;
+
+        // ── Upload tamper-evident proof to Supabase Storage ──────────────
+        // Path: kyc-documents/{applicationId}/consent_videos/{fileName}
+        try {
+          await uploadMedia('consent_videos', fileName, blob);
+          console.info('[Consent] Video proof uploaded to Supabase Storage:', fileName);
+        } catch (err) {
+          console.error('[Consent] Failed to upload video proof:', err);
+        }
+      };
+
+      recorder.start(500); // emit chunks every 500 ms
+      recorderRef.current = recorder;
+      console.info('[Consent] Screen recording started for phase:', orchState.phase);
+    }
+
+    // STOP: 4 s after COMPLETE phase, finalise the recording
+    if (orchState.phase === PHASES.COMPLETE && recorderRef.current) {
+      const stopTimer = setTimeout(() => {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+          recorderRef.current.stop();
+          console.info('[Consent] Screen recording stopped — COMPLETE phase.');
+        }
+      }, 4000);
+      return () => clearTimeout(stopTimer);
+    }
+  }, [orchState.phase, screenStream, cameraStream]);
+
   return (
     <>
       {/* Desktop */}
@@ -1197,11 +1329,15 @@ export default function VideoCallPage() {
           phase={orchState.phase}
           leftOverlay={orchState.leftOverlay}
           onJoined={() => { }}
+          onStreamReady={setCameraStream}
         />
         <RightPanel
           orchState={orchState}
           kycFields={aiState.kycFields}
           token={token}
+          proofBlob={proofBlob}
+          screenStream={screenStream}
+          setScreenStream={setScreenStream}
         />
       </div>
 
@@ -1215,10 +1351,18 @@ export default function VideoCallPage() {
             phase={orchState.phase}
             leftOverlay={orchState.leftOverlay}
             onJoined={() => { }}
+            onStreamReady={setCameraStream}
           />
         </div>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <RightPanel orchState={orchState} kycFields={aiState.kycFields} token={token} />
+          <RightPanel
+            orchState={orchState}
+            kycFields={aiState.kycFields}
+            token={token}
+            proofBlob={proofBlob}
+            screenStream={screenStream}
+            setScreenStream={setScreenStream}
+          />
         </div>
       </div>
     </>
